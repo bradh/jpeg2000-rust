@@ -320,18 +320,22 @@ fn encode_palette_box<W: io::Write>(
         "      <xjp:num_components length=\"1\" type=\"integer\">{}</xjp:num_components>",
         palette_box.num_components()
     )?;
-
-    for generated_component in palette_box.generated_components() {
+    for column_index in 0..palette_box.num_components() {
         writeln!(
             writer,
             "      <xjp:depth length=\"1\" type=\"integer\">{}</xjp:depth>",
-            generated_component.bit_depth().value()
+            palette_box.bit_depth(column_index).unwrap().encoded()
         )?;
-        writeln!(
-            writer,
-            "      <xjp:data length=\"1\" type=\"integer\">{}</xjp:data>",
-            to_hex(generated_component.values().iter())?
-        )?;
+    }
+    for entry_index in 0..palette_box.num_entries() {
+        for column_index in 0..palette_box.num_components() {
+            writeln!(
+                writer,
+                "      <xjp:data length=\"{}\" type=\"integer\">{}</xjp:data>",
+                palette_box.bit_depth(column_index).unwrap().num_bytes(),
+                palette_box.entry(entry_index, column_index).unwrap()
+            )?;
+        }
     }
     writer.write_all(b"    </xjp:pclr>\n")?;
     Ok(())
