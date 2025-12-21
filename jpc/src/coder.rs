@@ -5,8 +5,8 @@
 #[derive(Debug, Clone, Copy)]
 struct QeEntry {
     qe: u16,      // Probability estimate (15-bit value)
-    nmps: u8,     // Next state if MPS is coded
-    nlps: u8,     // Next state if LPS is coded
+    nmps: u8,     // Next state if MPS (more probable symbol) is coded
+    nlps: u8,     // Next state if LPS (less probable symbol) is coded
     switch: bool, // Whether to switch MPS sense
 }
 
@@ -104,7 +104,7 @@ impl MqEncoder {
         }
     }
 
-    /// Initialize the encoder (INITENC procedure)
+    /// Initialize the encoder (INITENC procedure, Figure C.10)
     pub fn init(&mut self) {
         self.a = 0x8000; // Set A to 0.75 in fixed-point
         self.c = 0;
@@ -119,6 +119,11 @@ impl MqEncoder {
         }
     }
 
+    /// Reset contexts to initial values.
+    ///
+    /// Also used for re-initialization when required.
+    ///
+    /// See ITU T.800 (V4) | ISO/IEC 15444-1:2024 Table D.7
     pub fn reset_contexts(&mut self) {
         assert!(self.contexts.len() == 19);
         for i in 0..19 {
@@ -130,7 +135,13 @@ impl MqEncoder {
         self.contexts[ZERO_CTX] = ContextState { index: 4, mps: 0 };
     }
 
-    /// Encode a decision (ENCODE procedure)
+    /// Encode a decision (ENCODE procedure).
+    ///
+    /// From ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Section C.2.2:
+    /// > The ENCODE procedure determines whether the decision D is a 0 or not. Then a CODE0 or a CODE1 procedure is called
+   /// > appropriately. Often embodiments will not have an ENCODE procedure, but will call the CODE0 or CODE1 procedures
+   /// > directly to code a 0-decision or a 1-decision. Figure C.3 shows this procedure.
+
     pub fn encode(&mut self, cx: usize, d: u8) {
         if d == 0 {
             self.code0(cx);
@@ -139,7 +150,9 @@ impl MqEncoder {
         }
     }
 
-    /// CODE0 procedure
+    /// CODE0 procedure.
+    ///
+    /// See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Section C.2.3.
     fn code0(&mut self, cx: usize) {
         let mps = self.contexts[cx].mps;
         if mps == 0 {
@@ -149,7 +162,9 @@ impl MqEncoder {
         }
     }
 
-    /// CODE1 procedure
+    /// CODE1 procedure.
+    ///
+    /// See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Section C.2.3.
     fn code1(&mut self, cx: usize) {
         let mps = self.contexts[cx].mps;
         if mps == 1 {
@@ -159,7 +174,9 @@ impl MqEncoder {
         }
     }
 
-    /// CODEMPS procedure with conditional MPS/LPS exchange
+    /// CODEMPS procedure with conditional MPS/LPS exchange.
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.7.
     fn code_mps(&mut self, cx: usize) {
         let index = self.contexts[cx].index as usize;
         let qe = QE_TABLE[index].qe as u32;
@@ -180,7 +197,9 @@ impl MqEncoder {
         }
     }
 
-    /// CODELPS procedure with conditional MPS/LPS exchange
+    /// CODELPS procedure with conditional MPS/LPS exchange.
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.6.
     fn code_lps(&mut self, cx: usize) {
         let index = self.contexts[cx].index as usize;
         let qe = QE_TABLE[index].qe as u32;
@@ -202,7 +221,9 @@ impl MqEncoder {
         self.renorm_e();
     }
 
-    /// RENORME - Encoder renormalization
+    /// RENORME - Encoder renormalization.
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.8.
     fn renorm_e(&mut self) {
         loop {
             self.a <<= 1;
@@ -219,7 +240,9 @@ impl MqEncoder {
         }
     }
 
-    /// BYTEOUT - Output a byte of compressed data
+    /// BYTEOUT - Output a byte of compressed data.
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.9.
     fn byte_out(&mut self) {
         if self.bp >= self.buffer.len() {
             self.buffer.push(0); // TODO clean up use of self.buffer
@@ -229,8 +252,8 @@ impl MqEncoder {
 
         if b == 0xFF {
             // Bit stuffing after 0xFF
-            let c_high = ((self.c >> 20) & 0xFF) as u8;
             self.bp += 1;
+            let c_high = ((self.c >> 20) & 0xFF) as u8;
             if self.bp >= self.buffer.len() {
                 self.buffer.push(0);
             }
@@ -269,7 +292,9 @@ impl MqEncoder {
         }
     }
 
-    /// FLUSH - Terminate encoding
+    /// FLUSH - Terminate encoding.
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.11.
     pub fn flush(&mut self) -> Vec<u8> {
         self.set_bits();
         self.c <<= self.ct as u32;
@@ -287,7 +312,9 @@ impl MqEncoder {
         self.buffer.clone().drain(1..).collect() // TODO clean up
     }
 
-    /// SETBITS - Set final bits in C register
+    /// SETBITS - Set final bits in C register.
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.12.
     fn set_bits(&mut self) {
         let temp = self.c + self.a;
         self.c |= 0xFFFF;
@@ -321,11 +348,12 @@ impl MqDecoder {
         }
     }
 
-    /// Initialize the decoder with compressed data (INITDEC procedure)
+    /// Initialize the decoder with compressed data (INITDEC procedure).
+    ///
+    /// See See ITU-T T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.20.
     pub fn init(&mut self, data: &[u8]) {
         self.buffer = data.to_vec();
         self.bp = 0;
-        self.a = 0x8000;
         self.ct = 0;
         self.c = 0;
 
@@ -346,6 +374,11 @@ impl MqDecoder {
         self.a = 0x8000;
     }
 
+    /// Reset contexts to initial values.
+    ///
+    /// Also used for re-initialization when required.
+    ///
+    /// See ITU T.800 (V4) | ISO/IEC 15444-1:2024 Section C.3.6 and Table D.7
     pub fn reset_contexts(&mut self) {
         assert!(self.contexts.len() == 19);
         for i in 0..19 {
@@ -357,7 +390,9 @@ impl MqDecoder {
         self.contexts[ZERO_CTX] = ContextState { index: 4, mps: 0 };
     }
 
-    /// Decode a decision (DECODE procedure)
+    /// Decode a decision (DECODE procedure).
+    ///
+    /// See ITU T.800 (V4) | ISO/IEC 15444-1:2024 Figure C.15
     pub fn decode(&mut self, cx: usize) -> u8 {
         let index = self.contexts[cx].index as usize;
         let qe = QE_TABLE[index].qe as u32;
@@ -465,7 +500,6 @@ impl MqDecoder {
                     // Marker code detected - feed 1s
                     self.c += 0xFF00;
                     self.ct = 8;
-                    //return;
                 } else {
                     // Stuffed bit after 0xFF - increment BP and read 0xFF
                     self.bp += 1;
@@ -501,6 +535,11 @@ mod tests {
         assert_eq!(QE_TABLE[0].nmps, 1);
         assert_eq!(QE_TABLE[0].nlps, 1);
         assert_eq!(QE_TABLE[0].switch, true);
+
+        assert_eq!(QE_TABLE[22].qe, 0x2401);
+        assert_eq!(QE_TABLE[22].nmps, 23);
+        assert_eq!(QE_TABLE[22].nlps, 20);
+        assert_eq!(QE_TABLE[22].switch, false);
 
         assert_eq!(QE_TABLE[46].qe, 0x5601);
         assert_eq!(QE_TABLE[46].nmps, 46);
@@ -771,6 +810,7 @@ mod tests {
 
     #[test]
     fn test_encode_j10() {
+        // See ITU T.800 (V4) | ISO/IEC 15444-1:2024 Section J.10.4
         let j10_4 = b"\x01\x8F\x0D\xC8\x75\x5D";
         let mut encoder = MqEncoder::new(19);
         encoder.reset_contexts();
