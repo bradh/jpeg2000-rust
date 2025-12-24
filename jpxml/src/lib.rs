@@ -277,7 +277,7 @@ fn encode_colour_specification_box<W: io::Write>(
     writeln!(
         writer,
         "      <xjp:method length=\"1\" type=\"integer\">{}</xjp:method>",
-        colour_specification_box.method()
+        colour_specification_box.method().encoded_meth()[0]
     )?;
     writeln!(
         writer,
@@ -289,12 +289,19 @@ fn encode_colour_specification_box<W: io::Write>(
         "      <xjp:approx length=\"1\" type=\"integer\">{}</xjp:approx>",
         colour_specification_box.colourspace_approximation()
     )?;
-    if let Some(enumerated_colour_space) = colour_specification_box.enumerated_colour_space() {
-        writeln!(
-            writer,
-            "      <xjp:colour length=\"4\" type=\"integer\">{}</xjp:colour>",
-            enumerated_colour_space
-        )?;
+    match colour_specification_box.method() {
+        jp2::ColourSpecificationMethods::EnumeratedColourSpace { code } => {
+            let methdat = code.encoded_methdat();
+            writeln!(
+                writer,
+                "    <xjp:data length=\"{}\" type=\"hexbyte\">{}</xjp:data>",
+                methdat.len(),
+                to_hex(methdat.iter())?
+            )?;
+        }
+        _ => {
+            // TODO - can we just use the methdat on the method() for all cases?
+        }
     }
     writer.write_all(b"    </xjp:colr>\n")?;
     Ok(())

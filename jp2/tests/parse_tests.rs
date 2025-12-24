@@ -11,7 +11,6 @@ struct ExpectedConfiguration {
     height: u32,
     num_components: u16,
     bit_depth: u8,
-    colourspace: EnumeratedColourSpaces,
     colour_specification_method: ColourSpecificationMethods,
     has_unexpected_approx_set: bool,
 }
@@ -26,8 +25,9 @@ fn test_hazard() {
             height: 128,
             num_components: 3,
             bit_depth: 16,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: false,
         },
     );
@@ -47,8 +47,9 @@ fn test_sample_file1() {
             height: 512,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -73,8 +74,9 @@ fn test_sample_file2() {
             height: 640,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sYCC,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sYCC,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -138,8 +140,9 @@ fn test_sample_file3() {
             height: 640,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sYCC,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sYCC,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -164,8 +167,9 @@ fn test_sample_file4() {
             height: 512,
             num_components: 1,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::Greyscale,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::Greyscale,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -191,8 +195,9 @@ fn test_sample_file5() {
             height: 480,
             num_components: 3,
             bit_depth: 16,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -219,8 +224,9 @@ fn test_sample_file6() {
             height: 512,
             num_components: 1,
             bit_depth: 12,
-            colourspace: EnumeratedColourSpaces::Greyscale,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::Greyscale,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -246,8 +252,9 @@ fn test_sample_file7() {
             height: 480,
             num_components: 3,
             bit_depth: 16,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -272,8 +279,30 @@ fn test_sample_file8() {
             height: 400,
             num_components: 1,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::Reserved, // Not present
-            colour_specification_method: ColourSpecificationMethods::RestrictedICCProfile,
+            colour_specification_method: ColourSpecificationMethods::RestrictedICCProfile {
+                profile_data: vec![
+                    0, 0, 1, 158, 0, 0, 0, 0, 2, 32, 0, 0, 115, 99, 110, 114, 71, 82, 65, 89, 88,
+                    89, 90, 32, 7, 210, 0, 1, 0, 23, 0, 9, 0, 26, 0, 16, 97, 99, 115, 112, 0, 0, 0,
+                    0, 0, 0, 0, 1, 75, 79, 68, 65, 71, 82, 69, 89, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 246, 214, 0, 1, 0, 0, 0, 0, 211, 45, 74, 80, 69, 71, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 100, 101, 115, 99, 0, 0, 0,
+                    180, 0, 0, 0, 154, 99, 112, 114, 116, 0, 0, 1, 80, 0, 0, 0, 42, 119, 116, 112,
+                    116, 0, 0, 1, 124, 0, 0, 0, 20, 107, 84, 82, 67, 0, 0, 1, 144, 0, 0, 0, 14,
+                    100, 101, 115, 99, 0, 0, 0, 0, 0, 0, 0, 64, 82, 101, 115, 116, 114, 105, 99,
+                    116, 101, 100, 32, 73, 67, 67, 32, 112, 114, 111, 102, 105, 108, 101, 32, 100,
+                    101, 115, 99, 114, 105, 98, 105, 110, 103, 32, 103, 114, 101, 121, 115, 99, 97,
+                    108, 101, 32, 118, 101, 114, 115, 105, 111, 110, 32, 111, 102, 32, 82, 79, 77,
+                    77, 45, 82, 71, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 116, 101, 120, 116, 0, 0, 0, 0, 67, 111, 112, 121,
+                    114, 105, 103, 104, 116, 32, 50, 48, 48, 49, 32, 69, 75, 67, 45, 82, 73, 67,
+                    67, 32, 82, 101, 102, 101, 114, 101, 110, 99, 101, 0, 0, 0, 88, 89, 90, 32, 0,
+                    0, 0, 0, 0, 0, 246, 214, 0, 1, 0, 0, 0, 0, 211, 45, 99, 117, 114, 118, 0, 0, 0,
+                    0, 0, 0, 0, 1, 1, 205,
+                ],
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -300,8 +329,9 @@ fn test_sample_file9() {
             height: 512,
             num_components: 1,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: true,
         },
     );
@@ -429,8 +459,9 @@ fn test_sample_subsampling1() {
             height: 1024,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sYCC,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sYCC,
+            },
             has_unexpected_approx_set: false,
         },
     );
@@ -455,8 +486,9 @@ fn test_sample_subsampling2() {
             height: 1024,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: false,
         },
     );
@@ -483,8 +515,9 @@ fn test_sample_zoo1() {
             height: 2602,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sYCC,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sYCC,
+            },
             has_unexpected_approx_set: false,
         },
     );
@@ -509,8 +542,9 @@ fn test_sample_zoo2() {
             height: 2602,
             num_components: 3,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::sRGB,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::sRGB,
+            },
             has_unexpected_approx_set: false,
         },
     );
@@ -567,43 +601,16 @@ fn test_sample_jp2_file(filename: &str, expected: ExpectedConfiguration) -> JP2F
     assert_eq!(header_box.colour_specification_boxes.len(), 1);
     let colour_specification_box = header_box.colour_specification_boxes.first().unwrap();
     assert_eq!(colour_specification_box.identifier(), *b"colr");
-    assert_eq!(
-        colour_specification_box.method(),
-        expected.colour_specification_method,
-    );
     assert_eq!(colour_specification_box.precedence(), 0);
     if expected.has_unexpected_approx_set {
         assert_eq!(colour_specification_box.colourspace_approximation(), 1u8);
     } else {
         assert_eq!(colour_specification_box.colourspace_approximation(), 0u8);
     }
-    match expected.colour_specification_method {
-        ColourSpecificationMethods::EnumeratedColourSpace => {
-            assert!(colour_specification_box.enumerated_colour_space().is_some());
-            assert!(colour_specification_box.restricted_icc_profile().is_none());
-            assert_eq!(
-                colour_specification_box.enumerated_colour_space().unwrap(),
-                expected.colourspace
-            );
-        }
-        ColourSpecificationMethods::RestrictedICCProfile => {
-            assert!(colour_specification_box.enumerated_colour_space().is_none());
-            assert!(colour_specification_box.restricted_icc_profile().is_some());
-            assert!(
-                colour_specification_box
-                    .restricted_icc_profile()
-                    .unwrap()
-                    .len()
-                    > 0
-            );
-        }
-        ColourSpecificationMethods::Reserved { value } => {
-            panic!(
-                "Should not be any reserved colourspace use, got {:?}",
-                value
-            )
-        }
-    }
+    assert_eq!(
+        *colour_specification_box.method(),
+        expected.colour_specification_method
+    );
 
     assert!(header_box.resolution_box.is_none());
 
@@ -628,8 +635,9 @@ fn test_geojp2() {
             height: 24,
             num_components: 1,
             bit_depth: 8,
-            colourspace: EnumeratedColourSpaces::Greyscale,
-            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace,
+            colour_specification_method: ColourSpecificationMethods::EnumeratedColourSpace {
+                code: EnumeratedColourSpaces::Greyscale,
+            },
             has_unexpected_approx_set: false,
         },
     );
@@ -696,16 +704,11 @@ fn test_jp2_file(filename: &str, expected: ExpectedConfiguration) -> JP2File {
     assert_eq!(header_box.colour_specification_boxes.len(), 1);
     let colour_specification_box = header_box.colour_specification_boxes.first().unwrap();
     assert_eq!(
-        colour_specification_box.method(),
+        *colour_specification_box.method(),
         expected.colour_specification_method,
     );
     assert_eq!(colour_specification_box.precedence(), 0);
     assert_eq!(colour_specification_box.colourspace_approximation(), 0u8);
-    assert!(colour_specification_box.enumerated_colour_space().is_some());
-    assert_eq!(
-        colour_specification_box.enumerated_colour_space().unwrap(),
-        expected.colourspace
-    );
 
     assert!(header_box.palette_box.is_none());
 
@@ -865,16 +868,13 @@ fn test_hirise_modified() {
     assert_eq!(header_box.colour_specification_boxes.len(), 1);
     let colour_specification_box = header_box.colour_specification_boxes.first().unwrap();
     assert_eq!(
-        colour_specification_box.method(),
-        ColourSpecificationMethods::EnumeratedColourSpace,
+        *colour_specification_box.method(),
+        ColourSpecificationMethods::EnumeratedColourSpace {
+            code: EnumeratedColourSpaces::sRGB
+        },
     );
     assert_eq!(colour_specification_box.precedence(), 0);
     assert_eq!(colour_specification_box.colourspace_approximation(), 0u8);
-    assert!(colour_specification_box.enumerated_colour_space().is_some());
-    assert_eq!(
-        colour_specification_box.enumerated_colour_space().unwrap(),
-        EnumeratedColourSpaces::sRGB,
-    );
 
     assert!(header_box.palette_box.is_none());
 
