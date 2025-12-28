@@ -90,7 +90,7 @@ fn test_ds0_ht_01_b11_codestream() {
     assert_eq!(cap.capability(2), None);
     assert_eq!(cap.capability(15), Some(3u16));
     assert_eq!(cap.capability_base_zero(0), None);
-    assert_eq!(cap.capability_base_zero(14), Some(3u16));
+    assert_eq!(cap.capability_base_zero(14), Some(3));
     assert_eq!(cap.capability_base_zero(31), None);
 
     // TODO: PRF

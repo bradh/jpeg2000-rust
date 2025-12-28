@@ -38,6 +38,10 @@ enum CodestreamError {
         image_horizontal_offset: u32,
         image_vertical_offset: u32,
     },
+    MarkerMalformed {
+        marker: MarkerSymbol,
+        offset: u64,
+    },
 }
 
 impl error::Error for CodestreamError {}
@@ -95,6 +99,13 @@ impl fmt::Display for CodestreamError {
                     tile_vertical_offset,
                     reference_tile_width,
                     reference_tile_height,
+                )
+            }
+            Self::MarkerMalformed { marker, offset } => {
+                write!(
+                    f,
+                    "unexpected marker 0x{:0>2X?}{:0>2X?} at byte offset {}",
+                    marker[0], marker[1], offset
                 )
             }
         }
@@ -1701,19 +1712,30 @@ impl ContiguousCodestream {
         let mut marker_segment_length: [u8; 2] = [0; 2];
         reader.read_exact(&mut marker_segment_length)?;
         segment.length = u16::from_be_bytes(marker_segment_length);
+        segment.capabilities = Vec::<Option<u16>>::with_capacity(32);
 
         // Pcap
         let mut capability_flags_present = [0u8; 4];
         reader.read_exact(&mut capability_flags_present)?;
         let pcap = u32::from_be_bytes(capability_flags_present);
-        log::debug!("pcap: 0x{pcap:08x}");
+        let num_capabilities = pcap.count_ones();
+        if num_capabilities != ((segment.length - 6) / 2) as u32 {
+            log::error!(
+                "Marker length {} inconsistent with Pcap ones: {num_capabilities}",
+                segment.length
+            );
+            return Err(CodestreamError::MarkerMalformed {
+                marker: MARKER_SYMBOL_CAP,
+                offset: self.offset,
+            }
+            .into());
+        }
         for i in 0..32 {
             let mask = 1u32 << (31 - i);
             if (pcap & mask) == mask {
                 let mut ccap_i_bytes = [0u8; 2];
                 reader.read_exact(&mut ccap_i_bytes)?;
                 let ccap_i = u16::from_be_bytes(ccap_i_bytes);
-                log::debug!("Ccap {i}: {ccap_i}");
                 segment.capabilities.push(Some(ccap_i));
             } else {
                 segment.capabilities.push(None);
@@ -1743,7 +1765,6 @@ impl ContiguousCodestream {
         for _ in 0..num_pfcp {
             reader.read_exact(&mut pcpf_bytes)?;
             let pcpf = u16::from_be_bytes(pcpf_bytes);
-            log::debug!("pcpf: {pcpf}");
             segment.pcpf.push(pcpf);
         }
 
