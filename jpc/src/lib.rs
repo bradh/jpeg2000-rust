@@ -42,6 +42,10 @@ enum CodestreamError {
         marker: MarkerSymbol,
         offset: u64,
     },
+    UnsupportedFeature {
+        marker: MarkerSymbol,
+        offset: u64,
+    },
 }
 
 impl error::Error for CodestreamError {}
@@ -105,6 +109,13 @@ impl fmt::Display for CodestreamError {
                 write!(
                     f,
                     "unexpected marker 0x{:0>2X?}{:0>2X?} at byte offset {}",
+                    marker[0], marker[1], offset
+                )
+            }
+            Self::UnsupportedFeature { marker, offset } => {
+                write!(
+                    f,
+                    "unsupported feature for marker 0x{:0>2X?}{:0>2X?} at byte offset {}",
                     marker[0], marker[1], offset
                 )
             }
@@ -1761,6 +1772,15 @@ impl ContiguousCodestream {
 
         // Pcpf
         let num_pfcp = (segment.length - 2) / 2;
+        if num_pfcp > 1 {
+            // Supporting more is possible, but we need a sanity check to prevent CPFnum overflow
+            log::error!("Only a single Pcpf value is supported at this time");
+            return Err(CodestreamError::UnsupportedFeature {
+                marker: MARKER_SYMBOL_CPF,
+                offset: self.offset,
+            }
+            .into());
+        }
         let mut pcpf_bytes = [0u8; 2];
         for _ in 0..num_pfcp {
             reader.read_exact(&mut pcpf_bytes)?;
