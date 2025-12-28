@@ -113,6 +113,8 @@ const MARKER_SYMBOL_EOC: MarkerSymbol = [255, 217]; // End of codestream
 
 // Fixed information marker segments
 const MARKER_SYMBOL_SIZ: MarkerSymbol = [255, 81]; // Image and tile size
+const MARKER_SYMBOL_PRF: MarkerSymbol = [0xFF, 0x56]; // Profile
+const MARKER_SYMBOL_CAP: MarkerSymbol = [0xFF, 0x50]; // Extended capabilities
 
 // Functional marker segments
 const MARKER_SYMBOL_COD: MarkerSymbol = [255, 82]; // Coding style default
@@ -136,6 +138,9 @@ const MARKER_SYMBOL_EPH: MarkerSymbol = [255, 146]; // End of packet header
 // Informational marker segments
 const MARKER_SYMBOL_CRG: MarkerSymbol = [255, 99]; // Component registration
 const MARKER_SYMBOL_COM: MarkerSymbol = [255, 100]; // Comment
+
+// Marker segment from ITU-T T.814 | ISO/IEC 15444-15 Section A.6:
+const MARKER_SYMBOL_CPF: MarkerSymbol = [0xFF, 0x59]; // Corresponding profile
 
 #[derive(Debug, PartialEq)]
 pub enum ProgressionOrder {
@@ -1232,6 +1237,138 @@ impl ImageAndTileSizeMarkerSegment {
     }
 }
 
+/// Extended Capabilities (CAP) Marker Segment.
+///
+/// From ITU-T T.800(V4) | ISO/IEC 15444-1:2024 Section A.5.2:
+/// > Function: Signals that extended capabilities were used to create (and are recommended
+/// > or required to decode) a codestream.
+/// >
+/// > Usage: Optional. If present, it must be included in the main header after the SIZ
+/// > marker segment and before any other marker segment defined in this Recommendation
+/// > | International Standard. The second-most-significant bit in Rsiz may optionally be
+/// > set to 1 to indicate the presence of the CAP marker segment.
+#[derive(Debug, Default, PartialEq)]
+pub struct ExtendedCapabilitiesMarkerSegment {
+    offset: u64,
+
+    // Lcap: Length of marker segment in bytes (not including the marker).
+    length: u16,
+
+    // 16 bit fields, defined outside T.800 | ISO/IEC 15444-1.
+    capabilities: Vec<Option<u16>>,
+}
+
+impl ExtendedCapabilitiesMarkerSegment {
+    pub fn length(&self) -> u16 {
+        self.length
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    /// Capabilities flags.
+    ///
+    /// This is a vector of the flags. Each element in the vector
+    /// is a different set of capabilities, typically defined in a
+    /// different standard. The element will be None if the flags
+    /// were not included, corresponding to a zero in the corresponding
+    /// Pcap<sup>i</sup> value.
+    ///
+    /// Known usages are at:
+    ///  - position 2, defined in ITU-T T.801(V4) | ISO/IEC 15444-2:2024 Section A.3.1.13.
+    ///  - position 15, defined in ITU-T T.814(06/2019) | ISO/IEC 15444-15:2019 Section A.3.
+    ///
+    /// Note that the positions are 1 based, so those correspond to 1 and 14 if using
+    /// 0 based vector indexing.
+    pub fn capabilities(&self) -> &Vec<Option<u16>> {
+        &self.capabilities
+    }
+
+    /// Capabilities flags.
+    ///
+    /// This is a single set of flags.
+    ///
+    /// The value will be None if the flags were not included, corresponding to a zero in the corresponding
+    /// Pcap<sup>i</sup> value.
+    ///
+    /// Known usages are at:
+    ///  - position 2, defined in ITU-T T.801(V4) | ISO/IEC 15444-2:2024 Section A.3.1.13.
+    ///  - position 15, defined in ITU-T T.814(06/2019) | ISO/IEC 15444-15:2019 Section A.3.
+    ///
+    /// Note that the positions are 1 based, which is how this function operates.
+    pub fn capability(&self, index: u8) -> Option<u16> {
+        self.capability_base_zero(index - 1)
+    }
+
+    /// Capabilities flags.
+    ///
+    /// This is a single set of flags.
+    ///
+    /// The value will be None if the flags were not included, corresponding to a zero in the corresponding
+    /// Pcap<sup>i</sup> value.
+    ///
+    /// Known usages are at:
+    ///  - position 2, defined in ITU-T T.801(V4) | ISO/IEC 15444-2:2024 Section A.3.1.13.
+    ///  - position 15, defined in ITU-T T.814(06/2019) | ISO/IEC 15444-15:2019 Section A.3.
+    ///
+    /// Note that the positions are 1 based, so those correspond to 1 and 14 if using
+    /// 0 based indexing as in this function.
+    pub fn capability_base_zero(&self, index: u8) -> Option<u16> {
+        self.capabilities[index as usize]
+    }
+}
+
+/// Corresponding Profile (CPF) Marker Segment.
+///
+/// From ITU-T T.814 | ISO/IEC 15444-15 Section A.6:
+/// > Function: The corresponding Pprofile (CPF) marker segment is provided to facilitate the reversible
+/// > transcoding of HTJ2K codestreams to and from codestreams that conform to Rec. ITU-T T.800 | ISO/IEC
+/// > 15444-1.
+/// >
+/// > Zero or one CPF marker segment shall be present in an HTJ2K codestream.
+///
+/// > Usage: Optional. If present, the CPF marker segment shall appear after the SIZ marker segment,
+/// > CAP marker segment and, if present, the PRF marker segment, but before any other marker segments
+/// > defined in Rec. ITU-T T.800 | ISO/IEC 15444-1.
+#[derive(Debug, Default, PartialEq)]
+pub struct CorrespondingProfileMarkerSegment {
+    offset: u64,
+
+    // Lcpf: Length of marker segment in bytes (not including the marker).
+    length: u16,
+
+    // Pcpf_i: the integers that encode CPFnum. None of these may be zero
+    pcpf: Vec<u16>,
+}
+
+impl CorrespondingProfileMarkerSegment {
+    pub fn length(&self) -> u16 {
+        self.length
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    /// Vector of Pcpf<sup>i</sup> values.
+    pub fn pcpf_raw(&self) -> &[u16] {
+        &self.pcpf
+    }
+
+    /// CPFnum.
+    ///
+    /// This is computed from the Pcpf<sup>i</sup> integers.
+    pub fn cpf_num(&self) -> i32 {
+        let mut cpf_num = -1i32;
+        for i in 0..self.pcpf.len() {
+            let pcpf = self.pcpf.get(i).unwrap();
+            cpf_num += (pcpf * 2u16.pow((16 * i) as u32)) as i32;
+        }
+        cpf_num
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum CommentRegistrationValue {
     // General use (binary values)
@@ -1552,6 +1689,69 @@ impl ContiguousCodestream {
 
         Ok(segment)
     }
+
+    fn decode_cap<R: io::Read + io::Seek>(
+        &mut self,
+        reader: &mut R,
+    ) -> Result<ExtendedCapabilitiesMarkerSegment, Box<dyn error::Error>> {
+        log::info!("CAP start at byte offset {}", reader.stream_position()? - 2);
+        let mut segment = ExtendedCapabilitiesMarkerSegment::default();
+
+        // Lcap
+        let mut marker_segment_length: [u8; 2] = [0; 2];
+        reader.read_exact(&mut marker_segment_length)?;
+        segment.length = u16::from_be_bytes(marker_segment_length);
+
+        // Pcap
+        let mut capability_flags_present = [0u8; 4];
+        reader.read_exact(&mut capability_flags_present)?;
+        let pcap = u32::from_be_bytes(capability_flags_present);
+        log::debug!("pcap: 0x{pcap:08x}");
+        for i in 0..32 {
+            let mask = 1u32 << (31 - i);
+            if (pcap & mask) == mask {
+                let mut ccap_i_bytes = [0u8; 2];
+                reader.read_exact(&mut ccap_i_bytes)?;
+                let ccap_i = u16::from_be_bytes(ccap_i_bytes);
+                log::debug!("Ccap {i}: {ccap_i}");
+                segment.capabilities.push(Some(ccap_i));
+            } else {
+                segment.capabilities.push(None);
+            }
+        }
+
+        info!("CAP end at byte offset {}", reader.stream_position()?);
+
+        Ok(segment)
+    }
+
+    fn decode_cpf<R: io::Read + io::Seek>(
+        &mut self,
+        reader: &mut R,
+    ) -> Result<CorrespondingProfileMarkerSegment, Box<dyn error::Error>> {
+        log::info!("CPF start at byte offset {}", reader.stream_position()? - 2);
+        let mut segment = CorrespondingProfileMarkerSegment::default();
+
+        // Lcpf
+        let mut marker_segment_length_bytes: [u8; 2] = [0; 2];
+        reader.read_exact(&mut marker_segment_length_bytes)?;
+        segment.length = u16::from_be_bytes(marker_segment_length_bytes);
+
+        // Pcpf
+        let num_pfcp = (segment.length - 2) / 2;
+        let mut pcpf_bytes = [0u8; 2];
+        for _ in 0..num_pfcp {
+            reader.read_exact(&mut pcpf_bytes)?;
+            let pcpf = u16::from_be_bytes(pcpf_bytes);
+            log::debug!("pcpf: {pcpf}");
+            segment.pcpf.push(pcpf);
+        }
+
+        log::info!("CPF end at byte offset {}", reader.stream_position()?);
+
+        Ok(segment)
+    }
+
     fn decode_sot<R: io::Read + io::Seek>(
         &mut self,
         reader: &mut R,
@@ -2100,6 +2300,12 @@ pub struct Header {
     // SIZ (Required)
     image_and_tile_size_marker_segment: ImageAndTileSizeMarkerSegment,
 
+    // CAP (Optional)
+    extended_capabilities_marker_segment: Option<ExtendedCapabilitiesMarkerSegment>,
+
+    // CPF (Optional)
+    corresponding_profile_marker_segment: Option<CorrespondingProfileMarkerSegment>,
+
     // COD (Required)
     coding_style_marker_segment: Option<CodingStyleMarkerSegment>,
 
@@ -2138,6 +2344,34 @@ impl Header {
     pub fn image_and_tile_size_marker_segment(&self) -> &ImageAndTileSizeMarkerSegment {
         &self.image_and_tile_size_marker_segment
     }
+
+    /// Extended capabilities (CAP) marker segment.
+    ///
+    /// Signals that extended capabilities were used to create (and are recommended or required to decode) a codestream.
+    ///
+    /// This segment is optional. The second-most-significant bit in Rsiz may optionally be set to 1 to indicate the
+    /// presence of the CAP marker segment.
+    ///
+    /// See ITU-T T.800(V4) or ISO/IEC 15444-1:2024 Section A.5.2 for how this works.
+    pub fn extended_capabilities_marker_segment(
+        &self,
+    ) -> &Option<ExtendedCapabilitiesMarkerSegment> {
+        &self.extended_capabilities_marker_segment
+    }
+
+    /// Corresponding profile (CPF) segment.
+    ///
+    /// Supports reversible transcoding of HTJ2K codestreams to and from Part 1 codestreams.
+    ///
+    /// This segment is optional.
+    ///
+    /// See ITU-T T.814(06/2019) or ISO/IEC 15444-15:2019 Section A.6 for how this works.
+    pub fn corresponding_profile_marker_segment(
+        &self,
+    ) -> &Option<CorrespondingProfileMarkerSegment> {
+        &self.corresponding_profile_marker_segment
+    }
+
     pub fn coding_style_marker_segment(&self) -> &CodingStyleMarkerSegment {
         self.coding_style_marker_segment.as_ref().unwrap()
     }
@@ -2413,12 +2647,27 @@ impl ContiguousCodestream {
                         header.comment_marker_segments.push(comment_marker_segment);
                     }
 
+                    // CAP (Optional)
+                    // TODO: in strict mode, ensure this is the first marker segment after SIZ
+                    MARKER_SYMBOL_CAP => {
+                        header.extended_capabilities_marker_segment =
+                            Some(self.decode_cap(reader)?);
+                    }
+
+                    // CPF (Optional)
+                    // From ITU-T T.814 | ISO/IEC 15444-15
+                    MARKER_SYMBOL_CPF => {
+                        header.corresponding_profile_marker_segment =
+                            Some(self.decode_cpf(reader)?);
+                    }
+
                     // Start of tile bit-stream
                     MARKER_SYMBOL_SOT => {
                         reader.seek(io::SeekFrom::Current(-2))?;
                         break;
                     }
                     _ => {
+                        log::error!("unexpected marker type: {marker_type:?}");
                         return Err(CodestreamError::MarkerUnexpected {
                             marker: marker_type,
                             offset: reader.stream_position()? - 2,

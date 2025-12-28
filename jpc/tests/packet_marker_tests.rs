@@ -47,9 +47,15 @@ fn test_sop() {
     assert_eq!(siz.vertical_separation(1).unwrap(), 1);
     assert_eq!(siz.vertical_separation(2).unwrap(), 1);
 
-    // TODO: CAP
+    // CAP
+    let maybe_cap = header.extended_capabilities_marker_segment();
+    assert!(maybe_cap.is_none());
 
     // TODO: PRF
+
+    // CPF
+    let maybe_cpf = header.corresponding_profile_marker_segment();
+    assert!(maybe_cpf.is_none());
 
     // COD
     let cod = header.coding_style_marker_segment();
@@ -205,9 +211,15 @@ fn test_eph() {
     assert_eq!(siz.vertical_separation(1).unwrap(), 1);
     assert_eq!(siz.vertical_separation(2).unwrap(), 1);
 
-    // TODO: CAP
+    // CAP
+    let maybe_cap = header.extended_capabilities_marker_segment();
+    assert!(maybe_cap.is_none());
 
     // TODO: PRF
+
+    // CPF
+    let maybe_cpf = header.corresponding_profile_marker_segment();
+    assert!(maybe_cpf.is_none());
 
     // COD
     let cod = header.coding_style_marker_segment();
