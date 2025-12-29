@@ -45,7 +45,7 @@ pub fn decode_icc<R: io::Read + io::Seek>(
 
     let tag_table_size = u32::from_be_bytes(tag_count) as usize;
 
-    let mut tag_table: Vec<Tag> = Vec::with_capacity(tag_table_size as usize);
+    let mut tag_table: Vec<Tag> = Vec::with_capacity(tag_table_size);
 
     let mut largest_offset: u32 = 0;
     let mut largest_size: u32 = 0;
