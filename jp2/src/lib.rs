@@ -303,7 +303,7 @@ impl JBox for SignatureBox {
     ) -> Result<(), Box<dyn error::Error>> {
         self.length = 12;
 
-        let mut buffer: [u8; 4] = [0; 4];
+        let mut buffer = [0u8; 4];
 
         reader.read_exact(&mut buffer)?;
 
@@ -426,7 +426,7 @@ impl JBox for FileTypeBox {
 
         reader.read_exact(&mut self.min_version)?;
 
-        let mut buffer: [u8; 4] = [0; 4];
+        let mut buffer = [0u8; 4];
 
         // The number of CL fields is determined by the length of this box
         let mut size = (self.length() - 8) / 4;
@@ -1168,7 +1168,7 @@ impl JBox for ChannelDefinitionBox {
         // Number of channel descriptions. This field specifies the number of
         // channel descriptions in this box. This field is encoded as a 2-byte
         // big endian unsigned integer.
-        let mut no_channel_descriptions: [u8; 2] = [0; 2];
+        let mut no_channel_descriptions = [0u8; 2];
 
         reader.read_exact(&mut no_channel_descriptions)?;
 
@@ -1373,7 +1373,7 @@ impl JBox for ComponentMappingBox {
             };
             reader.read_exact(&mut component_map.component)?;
 
-            let mut mapping_type: [u8; 1] = [0; 1];
+            let mut mapping_type = [0u8; 1];
             reader.read_exact(&mut mapping_type)?;
             component_map.mapping_type = ComponentMapType::new(mapping_type);
 
@@ -2372,7 +2372,7 @@ impl JBox for UUIDListBox {
 
         self.ids = Vec::with_capacity(size);
 
-        let mut buffer: [u8; 16] = [0; 16];
+        let mut buffer = [0u8; 16];
         while size > 0 {
             reader.read_exact(&mut buffer)?;
             self.ids.extend_from_slice(&[buffer]);
@@ -2489,7 +2489,7 @@ impl JBox for DataEntryURLBox {
         // location
         let mut size = self.length() - 4;
 
-        let mut buffer: [u8; 1] = [0; 1];
+        let mut buffer = [0u8; 1];
         while size > 0 {
             reader.read_exact(&mut buffer)?;
             self.location.extend_from_slice(&buffer);
@@ -2955,8 +2955,8 @@ fn decode_box_header<R: io::Read + io::Seek>(
     reader: &mut R,
 ) -> Result<BoxHeader, Box<dyn error::Error>> {
     let mut header_length = 8;
-    let mut box_length: [u8; 4] = [0; 4];
-    let mut box_type: [u8; 4] = [0; 4];
+    let mut box_length = [0u8; 4];
+    let mut box_type = [0u8; 4];
 
     reader.read_exact(&mut box_length)?;
 
@@ -2968,7 +2968,7 @@ fn decode_box_header<R: io::Read + io::Seek>(
         // If the value of this field is 1, then the XLBox field shall exist and the value of that field shall be the actual length of the box.
         reader.read_exact(&mut box_type)?;
 
-        let mut xl_length: [u8; 8] = [0; 8];
+        let mut xl_length = [0u8; 8];
         // This field specifies the actual length of the box if the value of the LBox field is 1.
         // This field is stored as an 8-byte big endian unsigned integer. The value includes all of the fields of the box, including the LBox, TBox and XLBox fields
         reader.read_exact(&mut xl_length)?;

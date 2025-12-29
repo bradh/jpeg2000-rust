@@ -37,10 +37,10 @@ pub fn decode_icc<R: io::Read + io::Seek>(
 ) -> Result<ICCProfile, Box<dyn error::Error>> {
     let icc_start_position = reader.stream_position()?;
 
-    let mut header: [u8; 128] = [0; 128];
+    let mut header = [0u8; 128];
     reader.read_exact(&mut header)?;
 
-    let mut tag_count: [u8; 4] = [0; 4];
+    let mut tag_count = [0u8; 4];
     reader.read_exact(&mut tag_count)?;
 
     let tag_table_size = u32::from_be_bytes(tag_count) as usize;
@@ -75,7 +75,7 @@ pub fn decode_icc<R: io::Read + io::Seek>(
         icc_start_position + largest_offset as u64 + largest_size as u64,
     ))?;
 
-    let mut unknown: [u8; 4] = [0; 4];
+    let mut unknown = [0u8; 4];
     reader.read_exact(&mut unknown)?;
     warn!("unknown bytes 3 {:?}", unknown);
 
