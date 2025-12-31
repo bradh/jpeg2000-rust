@@ -91,7 +91,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
             let file = File::open(path)?;
 
-            match extension {
+            match extension.to_ascii_lowercase().as_str() {
                 "jp2" => {
                     let mut reader = BufReader::new(file);
 
@@ -114,7 +114,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                         };
                     }
                 }
-                "jpc" | "j2c" => {
+                "jpc" | "j2c" | "j2k" => {
                     let mut reader = BufReader::new(file);
                     if let Err(error) = decode_jpc(&mut reader) {
                         return Err(JP2000Error::DecodingCodestream {
