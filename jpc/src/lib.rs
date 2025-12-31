@@ -9,6 +9,7 @@ use std::io::prelude::*;
 use std::str;
 
 mod coder;
+mod ht;
 mod tag_tree;
 
 #[derive(Debug)]
