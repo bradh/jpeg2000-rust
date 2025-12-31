@@ -5,7 +5,6 @@ use std::cmp;
 use std::error;
 use std::fmt;
 use std::io;
-use std::io::prelude::*;
 use std::str;
 
 mod coder;
@@ -766,15 +765,18 @@ impl DecoderCapability {
     }
 }
 
-// A.7.1
-//
-// Tile-part lengths (TLM)
-//
-// Function: Describes the length of every tile-part in the codestream. Each
-// tile-part's length is measured from the first byte of the SOT marker segment
-// to the end of the bit-stream data of that tile-part. The value of each
-// individual tile-part length in the TLM marker segment is the same as the
-// value in the corresponding Psot in the SOT marker segment.
+/// Tile-part lengths (TLM).
+///
+/// Function: Describes the length of every tile-part in the codestream. Each
+/// tile-part's length is measured from the first byte of the SOT marker segment
+/// to the end of the bit-stream data of that tile-part. The value of each
+/// individual tile-part length in the TLM marker segment is the same as the
+/// value in the corresponding Psot in the SOT marker segment.
+///
+/// Usage: Main header. It can be used optionally in the main header only.
+/// There may be multiple TLM marker segments in the main header.
+///
+/// See ITU-T T.800(V4) | ISO/IEC 15444-1:2024 Section A.7 and A.7.1.
 #[derive(Debug, Default)]
 pub struct TilePartLengthsSegment {
     offset: u64,
@@ -796,25 +798,68 @@ impl TilePartLengthsSegment {
     fn parameter_sizes(&self) -> Vec<TilePartParameterSize> {
         TilePartParameterSize::new(self.parameter_sizes[0])
     }
+
+    /// Marker segment index (Ztlm).
+    ///
+    /// Index of this marker segment relative to all other TLM marker
+    /// segments present in the current header.
+    pub fn segment_index(&self) -> u8 {
+        self.index[0]
+    }
+
+    /// Tile part lengths (Ttlm<sup>i</sup> / Ptlm<sup>i</sup>).
+    ///
+    /// Each entry in the vector corresponds to the index (implied or explicit)
+    /// of the tile-part, and the length of the tile-part.
+    pub fn tile_part_lengths(&self) -> &Vec<TilePartLength> {
+        &self.tile_part_lengths
+    }
 }
 
+/// Tile part length.
+///
+/// This provides one entry in the TLM segment.
 #[derive(Debug, Default)]
-struct TilePartLength {
+pub struct TilePartLength {
     // Ttlm^i: Tile index of the ith tile-part.
     //
     // There is either none or one value for every tile-part.
     // The number of tile-parts in each tile can be derived from this marker
     // segment (or the concatenated list of all such markers) or from a
     // non-zero TNsot parameter, if present.
-    tile_index: [u8; 2],
+    tile_index: Option<u16>,
 
     // Ptlm^i: Length in bytes, from the beginning of the SOT marker of the ith
     // tile-part to the end of the bit stream data for that tile-part.
     //
     // There is one value for every tile-part
-    tile_length: [u8; 4],
+    tile_length: u32,
 }
 
+impl TilePartLength {
+    /// Tile index (Ttlm<sup>i</sup>).
+    ///
+    /// Tile index of the _ith_ tile-part. There is either none or one value for every
+    /// tile-part. The number of tile-parts in each tile can be derived from this marker
+    /// segment (or the concatenated list of all such markers) or from a non-zero TNsot
+    /// parameter, if present.
+    ///
+    /// If this is None, the Ttlm parameter is encoded in 0 bits, which means
+    /// only one tile-part per tile and the tiles are in index order without omission
+    /// or repetition.
+    pub fn tile_index(&self) -> &Option<u16> {
+        &self.tile_index
+    }
+
+    /// Tile-part length (Ptlm<sup>i</sup>).
+    ///
+    /// Length in bytes, from the beginning of the SOT marker of the _ith_ tile-part
+    /// to the end of the bit stream data for that tile-part. There is one value for
+    /// every tile-part.
+    pub fn tile_length(&self) -> u32 {
+        self.tile_length
+    }
+}
 #[derive(Debug, PartialEq)]
 enum TilePartParameterSize {
     TtlmNone,
@@ -829,14 +874,14 @@ impl TilePartParameterSize {
     fn new(value: u8) -> Vec<TilePartParameterSize> {
         let mut tile_part_parameter_sizes = vec![];
 
-        match value << 2 >> 6 {
+        match (value >> 4) & 0b11 {
             0 => tile_part_parameter_sizes.push(TilePartParameterSize::TtlmNone),
             1 => tile_part_parameter_sizes.push(TilePartParameterSize::Ttlm8Bit),
             2 => tile_part_parameter_sizes.push(TilePartParameterSize::Ttlm16Bit),
             _ => {} // TODO: Add reserve values by removed known bits
         }
 
-        match value << 1 >> 7 {
+        match (value >> 6) & 0b1 {
             0 => tile_part_parameter_sizes.push(TilePartParameterSize::Ptlm16Bit),
             1 => tile_part_parameter_sizes.push(TilePartParameterSize::Ptlm32Bit),
             _ => {} // TODO: Add reserve values by removed known bits
@@ -2044,6 +2089,7 @@ impl ContiguousCodestream {
             length: self.decode_length(reader)?,
             ..Default::default()
         };
+        reader.read_exact(&mut segment.index)?;
         reader.read_exact(&mut segment.parameter_sizes)?;
 
         let parameter_sizes = segment.parameter_sizes();
@@ -2068,24 +2114,26 @@ impl ContiguousCodestream {
 
             // Ttlm
             if parameter_sizes.contains(&TilePartParameterSize::Ttlm8Bit) {
-                reader
-                    .take(1)
-                    .read_exact(&mut tile_part_length.tile_index)?;
+                let mut buf = [0u8; 1];
+                reader.read_exact(&mut buf)?;
+                tile_part_length.tile_index = Some(buf[0] as u16);
             } else if parameter_sizes.contains(&TilePartParameterSize::Ttlm16Bit) {
-                reader
-                    .take(2)
-                    .read_exact(&mut tile_part_length.tile_index)?;
+                let mut buf = [0u8; 2];
+                reader.read_exact(&mut buf)?;
+                tile_part_length.tile_index = Some(u16::from_be_bytes(buf));
+            } else {
+                tile_part_length.tile_index = None;
             }
 
             // Ptlm
             if parameter_sizes.contains(&TilePartParameterSize::Ptlm16Bit) {
-                reader
-                    .take(2)
-                    .read_exact(&mut tile_part_length.tile_length)?;
+                let mut buf = [0u8; 2];
+                reader.read_exact(&mut buf)?;
+                tile_part_length.tile_length = u16::from_be_bytes(buf) as u32;
             } else if parameter_sizes.contains(&TilePartParameterSize::Ptlm32Bit) {
-                reader
-                    .take(4)
-                    .read_exact(&mut tile_part_length.tile_length)?;
+                let mut buf = [0u8; 4];
+                reader.read_exact(&mut buf)?;
+                tile_part_length.tile_length = u32::from_be_bytes(buf);
             }
             segment.tile_part_lengths.push(tile_part_length);
         }
@@ -2369,7 +2417,7 @@ pub struct Header {
     packed_packet_headers: Vec<PackedPacketHeaderSegment>,
 
     // TLM (Optional)
-    tile_part_lengths: Option<TilePartLengthsSegment>,
+    tile_part_lengths: Vec<TilePartLengthsSegment>,
 
     // PLM (Optional)
     packet_lengths: Vec<PacketLengthSegment>,
@@ -2466,12 +2514,16 @@ impl Header {
         &self.progression_order_change
     }
 
-    /// Tile-part lengths (TLM) segment
+    /// Tile-part lengths (TLM) segment.
     ///
     /// Describes the length of every tile-part in the codestream.
     ///
-    /// See ITU-T T.800 or ISO/IEC 15444-1:2019 Section A.7.1 for how this works.
-    pub fn tile_part_lengths_segment(&self) -> &Option<TilePartLengthsSegment> {
+    /// There can be multiple TLM segments. There is an index in the segment that
+    /// identifies the order of the TLM segments relative to each other.
+    ///
+    /// See ITU-T T.800(V4) or ISO/IEC 15444-1:2024 Section A.7.1 for how this works.
+    pub fn tile_part_lengths_segments(&self) -> &Vec<TilePartLengthsSegment> {
+        // TODO: should we return them in sorted order?
         &self.tile_part_lengths
     }
 
@@ -2665,9 +2717,9 @@ impl ContiguousCodestream {
                         header.packed_packet_headers.push(self.decode_ppm(reader)?);
                     }
 
-                    // TLM (Optional)
+                    // TLM (Optional, repeatable)
                     MARKER_SYMBOL_TLM => {
-                        header.tile_part_lengths = Some(self.decode_tlm(reader)?);
+                        header.tile_part_lengths.push(self.decode_tlm(reader)?);
                     }
 
                     // PLM (Optional)
