@@ -52,21 +52,13 @@ impl fmt::Display for CodestreamError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::MarkerError { marker, error } => {
-                write!(
-                    f,
-                    "marker 0x{:0>2X?}{:0>2X?} error {:?}",
-                    marker[0], marker[1], error
-                )
+                write!(f, "marker {marker} error {error:?}",)
             }
             Self::MarkerMissing { marker } => {
-                write!(f, "missing marker 0x{:0>2X?}{:0>2X?}", marker[0], marker[1])
+                write!(f, "missing marker {marker}")
             }
             Self::MarkerUnexpected { marker, offset } => {
-                write!(
-                    f,
-                    "unexpected marker 0x{:0>2X?}{:0>2X?} at byte offset {}",
-                    marker[0], marker[1], offset
-                )
+                write!(f, "unexpected marker {marker} at byte offset {offset}",)
             }
             Self::TileGridOffsetOverflow {
                 image_horizontal_offset,
@@ -105,17 +97,12 @@ impl fmt::Display for CodestreamError {
                 )
             }
             Self::MarkerMalformed { marker, offset } => {
-                write!(
-                    f,
-                    "unexpected marker 0x{:0>2X?}{:0>2X?} at byte offset {}",
-                    marker[0], marker[1], offset
-                )
+                write!(f, "malformed marker {marker} at byte offset {offset}",)
             }
             Self::UnsupportedFeature { marker, offset } => {
                 write!(
                     f,
-                    "unsupported feature for marker 0x{:0>2X?}{:0>2X?} at byte offset {}",
-                    marker[0], marker[1], offset
+                    "unsupported feature for marker {marker} at byte offset {offset}",
                 )
             }
         }
@@ -124,44 +111,96 @@ impl fmt::Display for CodestreamError {
 
 const COMPRESSION_TYPE_WAVELET: u8 = 7;
 
-type MarkerSymbol = [u8; 2];
+#[derive(Default, PartialEq, Eq)]
+struct MarkerSymbol([u8; 2]);
+impl MarkerSymbol {
+    fn decode<R: io::Read + io::Seek>(reader: &mut R) -> io::Result<MarkerSymbol> {
+        let mut marker_type = MarkerSymbol::default();
+        reader.read_exact(&mut marker_type.0)?;
+        Ok(marker_type)
+    }
+}
 
+impl fmt::Debug for MarkerSymbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{:0>2X}{:0>2X}", self.0[0], self.0[1])
+    }
+}
+
+impl fmt::Display for MarkerSymbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} (0x{:0>2X}{:0>2X})",
+            match *self {
+                MARKER_SYMBOL_SOC => "SOC",
+                MARKER_SYMBOL_SOT => "SOT",
+                MARKER_SYMBOL_SOD => "SOD",
+                MARKER_SYMBOL_EOC => "EOC",
+                MARKER_SYMBOL_SIZ => "SIZ",
+                MARKER_SYMBOL_PRF => "PRF",
+                MARKER_SYMBOL_CAP => "CAP",
+                MARKER_SYMBOL_COD => "COD",
+                MARKER_SYMBOL_COC => "COC",
+                MARKER_SYMBOL_RGN => "RGN",
+                MARKER_SYMBOL_QCD => "QCD",
+                MARKER_SYMBOL_QCC => "QCC",
+                MARKER_SYMBOL_POC => "POC",
+                MARKER_SYMBOL_TLM => "TLM",
+                MARKER_SYMBOL_PLM => "PLM",
+                MARKER_SYMBOL_PLT => "PLT",
+                MARKER_SYMBOL_PPM => "PPM",
+                MARKER_SYMBOL_PPT => "PPT",
+                MARKER_SYMBOL_SOP => "SOP",
+                MARKER_SYMBOL_EPH => "EPH",
+                MARKER_SYMBOL_CRG => "CRG",
+                MARKER_SYMBOL_COM => "COM",
+                MARKER_SYMBOL_CPF => "CPF",
+                _ => "Unknown Marker",
+            },
+            self.0[0],
+            self.0[1]
+        )
+    }
+}
+
+// Markers and segment markers from ITU T.800 | ISO/IEC 15444-1 Table A.2
 // Delimiting markers and marker segments
-const MARKER_SYMBOL_SOC: MarkerSymbol = [255, 79]; // Start of code stream
-const MARKER_SYMBOL_SOT: MarkerSymbol = [255, 144]; // Start of tile-part
-const MARKER_SYMBOL_SOD: MarkerSymbol = [255, 147]; // Start of data
-const MARKER_SYMBOL_EOC: MarkerSymbol = [255, 217]; // End of codestream
+const MARKER_SYMBOL_SOC: MarkerSymbol = MarkerSymbol([0xFF, 0x4F]); // Start of code stream
+const MARKER_SYMBOL_SOT: MarkerSymbol = MarkerSymbol([0xFF, 0x90]); // Start of tile-part
+const MARKER_SYMBOL_SOD: MarkerSymbol = MarkerSymbol([0xFF, 0x93]); // Start of data
+const MARKER_SYMBOL_EOC: MarkerSymbol = MarkerSymbol([0xFF, 0xD9]); // End of codestream
 
 // Fixed information marker segments
-const MARKER_SYMBOL_SIZ: MarkerSymbol = [255, 81]; // Image and tile size
-const MARKER_SYMBOL_PRF: MarkerSymbol = [0xFF, 0x56]; // Profile
-const MARKER_SYMBOL_CAP: MarkerSymbol = [0xFF, 0x50]; // Extended capabilities
+const MARKER_SYMBOL_SIZ: MarkerSymbol = MarkerSymbol([0xFF, 0x51]); // Image and tile size
+const MARKER_SYMBOL_PRF: MarkerSymbol = MarkerSymbol([0xFF, 0x56]); // Profile
+const MARKER_SYMBOL_CAP: MarkerSymbol = MarkerSymbol([0xFF, 0x50]); // Extended capabilities
 
 // Functional marker segments
-const MARKER_SYMBOL_COD: MarkerSymbol = [255, 82]; // Coding style default
-const MARKER_SYMBOL_COC: MarkerSymbol = [255, 83]; // Coding style component
-const MARKER_SYMBOL_RGN: MarkerSymbol = [255, 94]; // Region-of-interest
-const MARKER_SYMBOL_QCD: MarkerSymbol = [255, 92]; // Quantization default
-const MARKER_SYMBOL_QCC: MarkerSymbol = [255, 93]; // Quantization component
-const MARKER_SYMBOL_POC: MarkerSymbol = [255, 95]; // Progression order change
+const MARKER_SYMBOL_COD: MarkerSymbol = MarkerSymbol([0xFF, 0x52]); // Coding style default
+const MARKER_SYMBOL_COC: MarkerSymbol = MarkerSymbol([0xFF, 0x53]); // Coding style component
+const MARKER_SYMBOL_RGN: MarkerSymbol = MarkerSymbol([0xFF, 0x5E]); // Region-of-interest
+const MARKER_SYMBOL_QCD: MarkerSymbol = MarkerSymbol([0xFF, 0x5C]); // Quantization default
+const MARKER_SYMBOL_QCC: MarkerSymbol = MarkerSymbol([0xFF, 0x5D]); // Quantization component
+const MARKER_SYMBOL_POC: MarkerSymbol = MarkerSymbol([0xFF, 0x5F]); // Progression order change
 
 // Pointer marker segments
-const MARKER_SYMBOL_TLM: MarkerSymbol = [255, 85]; // Tile-part lengths
-const MARKER_SYMBOL_PLM: MarkerSymbol = [255, 87]; // Packet length, main header
-const MARKER_SYMBOL_PLT: MarkerSymbol = [255, 88]; // Packet length, tile-part header
-const MARKER_SYMBOL_PPM: MarkerSymbol = [255, 96]; // Packed packet headers, main header
-const MARKER_SYMBOL_PPT: MarkerSymbol = [255, 97]; // Packed packet headers, tile-part header
+const MARKER_SYMBOL_TLM: MarkerSymbol = MarkerSymbol([0xFF, 0x55]); // Tile-part lengths
+const MARKER_SYMBOL_PLM: MarkerSymbol = MarkerSymbol([0xFF, 0x57]); // Packet length, main header
+const MARKER_SYMBOL_PLT: MarkerSymbol = MarkerSymbol([0xFF, 0x58]); // Packet length, tile-part header
+const MARKER_SYMBOL_PPM: MarkerSymbol = MarkerSymbol([0xFF, 0x60]); // Packed packet headers, main header
+const MARKER_SYMBOL_PPT: MarkerSymbol = MarkerSymbol([0xFF, 0x61]); // Packed packet headers, tile-part header
 
 // In bit stream markers and marker segments
-const MARKER_SYMBOL_SOP: MarkerSymbol = [255, 145]; // Start of packet
-const MARKER_SYMBOL_EPH: MarkerSymbol = [255, 146]; // End of packet header
+const MARKER_SYMBOL_SOP: MarkerSymbol = MarkerSymbol([0xFF, 0x91]); // Start of packet
+const MARKER_SYMBOL_EPH: MarkerSymbol = MarkerSymbol([0xFF, 0x92]); // End of packet header
 
 // Informational marker segments
-const MARKER_SYMBOL_CRG: MarkerSymbol = [255, 99]; // Component registration
-const MARKER_SYMBOL_COM: MarkerSymbol = [255, 100]; // Comment
+const MARKER_SYMBOL_CRG: MarkerSymbol = MarkerSymbol([0xFF, 0x63]); // Component registration
+const MARKER_SYMBOL_COM: MarkerSymbol = MarkerSymbol([0xFF, 0x64]); // Comment
 
 // Marker segment from ITU-T T.814 | ISO/IEC 15444-15 Section A.6:
-const MARKER_SYMBOL_CPF: MarkerSymbol = [0xFF, 0x59]; // Corresponding profile
+const MARKER_SYMBOL_CPF: MarkerSymbol = MarkerSymbol([0xFF, 0x59]); // Corresponding profile
 
 #[derive(Debug, PartialEq)]
 pub enum ProgressionOrder {
@@ -2646,13 +2685,12 @@ impl ContiguousCodestream {
     ) -> Result<Header, Box<dyn error::Error>> {
         let mut header = Header::default();
 
-        let mut marker_type: MarkerSymbol = [0; 2];
+        let mut marker_type = MarkerSymbol::decode(reader)?;
 
         // SOC (Required as the first marker)
-        reader.read_exact(&mut marker_type)?;
         if marker_type != MARKER_SYMBOL_SOC {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: MARKER_SYMBOL_SOC,
+                marker: marker_type,
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -2660,10 +2698,10 @@ impl ContiguousCodestream {
         info!("SOC start at byte offset {}", reader.stream_position()? - 2);
 
         // SIZ (Required as the second marker segment)
-        reader.read_exact(&mut marker_type)?;
+        marker_type = MarkerSymbol::decode(reader)?;
         if marker_type != MARKER_SYMBOL_SIZ {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: MARKER_SYMBOL_SIZ,
+                marker: marker_type,
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -2674,8 +2712,8 @@ impl ContiguousCodestream {
         let no_components = header.image_and_tile_size_marker_segment.no_components();
 
         loop {
-            match reader.read_exact(&mut marker_type) {
-                Ok(_) => match marker_type {
+            match MarkerSymbol::decode(reader) {
+                Ok(marker_type) => match marker_type {
                     // COC (Optional, no more than one COC per component)
                     MARKER_SYMBOL_COC => {
                         header
@@ -2839,9 +2877,7 @@ impl ContiguousCodestream {
     ) -> Result<TileHeader, Box<dyn error::Error>> {
         let mut tile_header = TileHeader::default();
 
-        let mut marker_type: MarkerSymbol = [0; 2];
-
-        reader.read_exact(&mut marker_type)?;
+        let marker_type: MarkerSymbol = MarkerSymbol::decode(reader)?;
 
         // SOT (Required as the first marker segment of every tile-part header)
         if marker_type != MARKER_SYMBOL_SOT {
@@ -2855,8 +2891,8 @@ impl ContiguousCodestream {
         tile_header.start_of_tile_segment = self.decode_sot(reader)?;
 
         loop {
-            match reader.read_exact(&mut marker_type) {
-                Ok(_) => match marker_type {
+            match MarkerSymbol::decode(reader) {
+                Ok(marker_type) => match marker_type {
                     // COD (Optional)
                     MARKER_SYMBOL_COD => {
                         tile_header.coding_style_marker_segment = self.decode_cod(reader)?;
@@ -2950,13 +2986,12 @@ impl ContiguousCodestream {
 
         // The tile-part headers are found at the beginning of each tile-part
         let tile_header = self.decode_first_tile_header(reader, no_components)?;
-        let mut marker_type: MarkerSymbol = [0; 2];
 
         // Required as the last marker segment of every tile-part header
-        reader.read_exact(&mut marker_type)?;
+        let marker_type: MarkerSymbol = MarkerSymbol::decode(reader)?;
         if marker_type != MARKER_SYMBOL_SOD {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: MARKER_SYMBOL_SOD,
+                marker: marker_type,
                 offset: reader.stream_position()?,
             }
             .into());
@@ -2968,8 +3003,8 @@ impl ContiguousCodestream {
         info!("SOD start at byte offset {}", start_of_data - 2);
 
         loop {
-            match reader.read_exact(&mut marker_type) {
-                Ok(_) => match marker_type {
+            match MarkerSymbol::decode(reader) {
+                Ok(marker_type) => match marker_type {
                     // in bit-stream markers
                     MARKER_SYMBOL_SOP => {
                         info!("SOP start at byte offset {}", reader.stream_position()? - 2);
@@ -3181,7 +3216,140 @@ pub fn decode_jpc<R: io::Read + io::Seek>(
     //
     // These include the HL, LH, and HH subbands of the same two dimensional
     // subband decomposition.
-    // For the last decomposition level the LL subband is also included.0
+    // For the last decomposition level the LL subband is also included.
 
     Ok(continuous_codestream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cap_marker_debug() {
+        let marker = MARKER_SYMBOL_CAP;
+        assert_eq!(format!("{marker:#?}"), "0xFF50");
+    }
+
+    #[test]
+    fn test_cap_marker_format() {
+        let marker = MARKER_SYMBOL_CAP;
+        assert_eq!(format!("{marker}"), "CAP (0xFF50)");
+    }
+
+    #[test]
+    fn test_soc_marker_debug() {
+        let marker = MARKER_SYMBOL_SOC;
+        assert_eq!(format!("{marker:#?}"), "0xFF4F");
+    }
+
+    #[test]
+    fn test_soc_marker_format() {
+        let marker = MARKER_SYMBOL_SOC;
+        assert_eq!(format!("{marker}"), "SOC (0xFF4F)");
+    }
+
+    #[test]
+    fn test_com_marker_debug() {
+        let marker = MARKER_SYMBOL_COM;
+        assert_eq!(format!("{marker:#?}"), "0xFF64");
+    }
+
+    #[test]
+    fn test_com_marker_format() {
+        let marker = MARKER_SYMBOL_COM;
+        assert_eq!(format!("{marker}"), "COM (0xFF64)");
+    }
+
+    #[test]
+    fn test_unknown_marker_debug() {
+        let marker = MarkerSymbol([0xFE, 0xFD]);
+        assert_eq!(format!("{marker:#?}"), "0xFEFD");
+    }
+
+    #[test]
+    fn test_unknown_marker_format() {
+        let marker = MarkerSymbol([0xFE, 0xFD]);
+        assert_eq!(format!("{marker}"), "Unknown Marker (0xFEFD)");
+    }
+
+    #[test]
+    fn test_codestream_error_marker_error() {
+        let e = CodestreamError::MarkerError {
+            marker: MARKER_SYMBOL_COC,
+            error: "test error".into(),
+        };
+        assert_eq!(format!("{e}"), "marker COC (0xFF53) error \"test error\"");
+    }
+
+    #[test]
+    fn test_codestream_error_marker_malformed() {
+        let e = CodestreamError::MarkerMalformed {
+            marker: MARKER_SYMBOL_POC,
+            offset: 3,
+        };
+        assert_eq!(
+            format!("{e}"),
+            "malformed marker POC (0xFF5F) at byte offset 3"
+        );
+    }
+
+    #[test]
+    fn test_codestream_error_missing_marker() {
+        let e = CodestreamError::MarkerMissing {
+            marker: MARKER_SYMBOL_SIZ,
+        };
+        assert_eq!(format!("{e}"), "missing marker SIZ (0xFF51)");
+    }
+
+    #[test]
+    fn test_codestream_error_unexpected_marker() {
+        let e = CodestreamError::MarkerUnexpected {
+            marker: MARKER_SYMBOL_SOP,
+            offset: 75453,
+        };
+        assert_eq!(
+            format!("{e}"),
+            "unexpected marker SOP (0xFF91) at byte offset 75453"
+        );
+    }
+
+    #[test]
+    fn test_codestream_error_tilesize_overflow() {
+        let e = CodestreamError::TileSizeOverflow {
+            image_horizontal_offset: 1,
+            image_vertical_offset: 2,
+            tile_horizontal_offset: 3,
+            tile_vertical_offset: 4,
+            reference_tile_width: 5,
+            reference_tile_height: 6,
+        };
+        assert_eq!(format!("{e}"), "tile size overflow: XOSiz = 1, YOsiz = 2, XTOsiz = 3, YTOsiz = 4, XTsize = 5, YTsize = 6");
+    }
+
+    #[test]
+    fn test_codestream_error_tile_grid_offset_overflow() {
+        let e = CodestreamError::TileGridOffsetOverflow {
+            tile_horizontal_offset: 1,
+            tile_vertical_offset: 2,
+            image_horizontal_offset: 3,
+            image_vertical_offset: 4,
+        };
+        assert_eq!(
+            format!("{e}"),
+            "tile grid offset overflow: XOSiz = 3, YOsiz = 4, XTOsiz = 1, YTOsiz = 2"
+        );
+    }
+
+    #[test]
+    fn test_codestream_error_unsupported_feature() {
+        let e = CodestreamError::UnsupportedFeature {
+            marker: MARKER_SYMBOL_PLT,
+            offset: 3425,
+        };
+        assert_eq!(
+            format!("{e}"),
+            "unsupported feature for marker PLT (0xFF58) at byte offset 3425"
+        );
+    }
 }
