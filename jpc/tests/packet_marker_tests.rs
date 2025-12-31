@@ -149,7 +149,7 @@ fn test_sop() {
     assert!(header.packed_packet_headers_segments().is_empty());
 
     // TLM
-    assert!(header.tile_part_lengths_segment().is_none());
+    assert!(header.tile_part_lengths_segments().is_empty());
 
     // PLM
     assert!(header.packet_lengths_segments().is_empty());
@@ -310,7 +310,7 @@ fn test_eph() {
     assert!(header.packed_packet_headers_segments().is_empty());
 
     // TLM
-    assert!(header.tile_part_lengths_segment().is_none());
+    assert!(header.tile_part_lengths_segments().is_empty());
 
     // PLM
     assert!(header.packet_lengths_segments().is_empty());
