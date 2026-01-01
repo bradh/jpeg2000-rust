@@ -2853,6 +2853,29 @@ impl ContiguousCodestream {
                         reader.seek(io::SeekFrom::Current(-2))?;
                         break;
                     }
+
+                    // Reserved markers
+                    // ITU-T H.800 or ISO/IEC 15444-1 2024, Section A.1.3 and Table A.1
+                    MarkerSymbol([0xff, 0x30])
+                    | MarkerSymbol([0xff, 0x31])
+                    | MarkerSymbol([0xff, 0x32])
+                    | MarkerSymbol([0xff, 0x33])
+                    | MarkerSymbol([0xff, 0x34])
+                    | MarkerSymbol([0xff, 0x35])
+                    | MarkerSymbol([0xff, 0x36])
+                    | MarkerSymbol([0xff, 0x37])
+                    | MarkerSymbol([0xff, 0x38])
+                    | MarkerSymbol([0xff, 0x39])
+                    | MarkerSymbol([0xff, 0x3A])
+                    | MarkerSymbol([0xff, 0x3B])
+                    | MarkerSymbol([0xff, 0x3C])
+                    | MarkerSymbol([0xff, 0x3D])
+                    | MarkerSymbol([0xff, 0x3E])
+                    | MarkerSymbol([0xff, 0x3F]) => {
+                        // Reserved as marker only, not a segment
+                        info!("Skipping marker: {:?}", marker_type);
+                    }
+
                     _ => {
                         log::error!("unexpected marker type: {marker_type:?}");
                         return Err(CodestreamError::MarkerUnexpected {

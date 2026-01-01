@@ -40,7 +40,7 @@ fn test_parse_p0_j2k_files() {
     let files = [
         // (Expect parse?, file_name)
         (true, "./input/conformance/p0_01.j2k"),
-        (false, "./input/conformance/p0_02.j2k"),
+        (true, "./input/conformance/p0_02.j2k"),
         (false, "./input/conformance/p0_03.j2k"),
         (true, "./input/conformance/p0_04.j2k"),
         (true, "./input/conformance/p0_05.j2k"),
