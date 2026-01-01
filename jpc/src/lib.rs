@@ -48,7 +48,7 @@ enum CodestreamError {
         marker: MarkerSymbol,
         offset: u64,
     },
-    UnexpectedError {
+    InputFormatError {
         error: String,
     },
 }
@@ -111,14 +111,14 @@ impl fmt::Display for CodestreamError {
                     "unsupported feature for marker {marker} at byte offset {offset}",
                 )
             }
-            Self::UnexpectedError { error } => write!(f, "Unknown error: {}", error),
+            Self::InputFormatError { error } => write!(f, "Unknown error in input: {}", error),
         }
     }
 }
 
 impl From<io::Error> for CodestreamError {
     fn from(value: io::Error) -> Self {
-        CodestreamError::UnexpectedError {
+        CodestreamError::InputFormatError {
             error: value.to_string(),
         }
     }
@@ -1543,13 +1543,13 @@ impl CommentMarkerSegment {
 #[derive(Debug)]
 pub struct QuantizationInfo {
     pub guard_bits: u8, // 0..=7
-    pub style: QuantStyle,
+    pub style: QuantizationStyle,
     values_bytes: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum QuantStyle {
-    NoQuant,
+pub enum QuantizationStyle {
+    NoQuantization,
     ScalarDerived,
     ScalarExpounded,
     Reserved(u8),
@@ -1558,40 +1558,50 @@ pub enum QuantStyle {
 impl QuantizationInfo {
     const SHIFT_GUARD: u8 = 5; // guard bits are encoded into top 3 bits of a u8
     const SHIFT_EXP: u8 = 3;
-    const SHIFT_BIG: u8 = 8 + Self::SHIFT_EXP; // one byte more
     const MASK_EXPONENT: u8 = 0b11111; // 5 bits for exponent
 
     /// encode guard bits and style into u8
     pub fn style_as_u8(&self) -> u8 {
-        let g = self.guard_bits << 5;
+        let g = self.guard_bits << Self::SHIFT_GUARD;
         let qs = match self.style {
-            QuantStyle::NoQuant => 0,
-            QuantStyle::ScalarDerived => 1,
-            QuantStyle::ScalarExpounded => 2,
-            QuantStyle::Reserved(v) => v,
+            QuantizationStyle::NoQuantization => 0,
+            QuantizationStyle::ScalarDerived => 1,
+            QuantizationStyle::ScalarExpounded => 2,
+            QuantizationStyle::Reserved(v) => v,
         };
         g + qs
     }
 
-    /// Grab the exponents for the quantization values
+    /// Pull the exponent from the high byte of a value
+    fn exponent_from_quant_value(v: &u8) -> u8 {
+        let v: u8 = *v;
+        (v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT
+    }
+
+    /// Grab the exponents from the quantization values
+    ///
+    /// See ITU-T T.800(V4) or ISO/IEC 15444-1:2024 Section A.6.4
+    /// See also Tables A.28, A.29, A.30
     pub fn exponents(&self) -> Vec<u8> {
+        // values are currently packed in a values_bytes
         match &self.style {
-            QuantStyle::NoQuant => self
+            QuantizationStyle::NoQuantization => self
                 .values_bytes
+                // each value is logically a u8
                 .iter()
-                .map(|v| (v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT)
+                .map(Self::exponent_from_quant_value)
                 .collect(),
-            QuantStyle::ScalarDerived => {
-                let v = self.values_bytes[0];
-                vec![(v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT]
+            QuantizationStyle::ScalarDerived => {
+                // Only need the high byte for the single u16
+                vec![Self::exponent_from_quant_value(&self.values_bytes[0])]
             }
-            QuantStyle::ScalarExpounded => self
+            QuantizationStyle::ScalarExpounded => self
                 .values_bytes
-                .iter()
-                .step_by(2)
-                .map(|v| (v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT)
+                // logically each value is a u16, but we only need the high byte
+                .chunks_exact(2)
+                .map(|c| Self::exponent_from_quant_value(&c[0]))
                 .collect(),
-            QuantStyle::Reserved(v) => {
+            QuantizationStyle::Reserved(v) => {
                 panic!("unable to convert exponents for unknown QuantStyle {}", v)
             }
         }
@@ -1601,24 +1611,26 @@ impl QuantizationInfo {
     pub fn values(&self) -> Vec<u16> {
         info!("Weird to grab raw values for quantization style");
         match &self.style {
-            QuantStyle::NoQuant => self.values_bytes.iter().map(|v| *v as u16).collect(),
-            QuantStyle::ScalarDerived => {
+            QuantizationStyle::NoQuantization => {
+                self.values_bytes.iter().map(|v| *v as u16).collect()
+            }
+            QuantizationStyle::ScalarDerived => {
                 let b1 = self.values_bytes[0];
                 let b2 = self.values_bytes[1];
                 vec![u16::from_be_bytes([b1, b2])]
             }
-            QuantStyle::ScalarExpounded => self
+            QuantizationStyle::ScalarExpounded => self
                 .values_bytes
                 .chunks_exact(2)
                 .map(|b| u16::from_be_bytes(b.try_into().unwrap()))
                 .collect(),
-            QuantStyle::Reserved(v) => {
+            QuantizationStyle::Reserved(v) => {
                 panic!("unable to convert values for unknown QuantStyle {}", v)
             }
         }
     }
 
-    /// Decode a QuantizationStyle given expected length
+    /// Decode a QuantizationInfo given expected length
     ///
     /// length should be the length of style and associated values
     fn decode<R: io::Read + io::Seek>(
@@ -1636,31 +1648,31 @@ impl QuantizationInfo {
         let style = match style_code {
             0 => {
                 if !(length - 2).is_multiple_of(3) {
-                    Err(CodestreamError::UnexpectedError {
+                    Err(CodestreamError::InputFormatError {
                         error: String::from("Invalid length for quantization style"),
                     })?
                 }
-                QuantStyle::NoQuant
+                QuantizationStyle::NoQuantization
             }
             1 => {
                 if length != 3 {
-                    Err(CodestreamError::UnexpectedError {
+                    Err(CodestreamError::InputFormatError {
                         error: String::from("Invalid length for quantization style"),
                     })?
                 }
-                QuantStyle::ScalarDerived
+                QuantizationStyle::ScalarDerived
             }
             2 => {
                 if !(length - 3).is_multiple_of(6) {
-                    Err(CodestreamError::UnexpectedError {
+                    Err(CodestreamError::InputFormatError {
                         error: String::from("Invalid length for quantization style"),
                     })?
                 }
-                QuantStyle::ScalarExpounded
+                QuantizationStyle::ScalarExpounded
             }
             _ => {
                 // error out because we usually need quantization style
-                Err(CodestreamError::UnexpectedError {
+                Err(CodestreamError::InputFormatError {
                     error: format!("Unknown quantization style: {:x}", qb),
                 })?
             }
@@ -2179,6 +2191,7 @@ impl ContiguousCodestream {
             index += 1;
         }
         info!("POC end at byte offset {}", reader.stream_position()?);
+
         Ok(segment)
     }
 
@@ -2301,6 +2314,7 @@ impl ContiguousCodestream {
         let length = self.decode_length(reader)?;
         let quantization_style = QuantizationInfo::decode(reader, length - 2)?;
         info!("QCD end at byte offset {}", reader.stream_position()?);
+
         Ok(QuantizationDefaultMarkerSegment {
             length,
             quantization_info: quantization_style,
@@ -3424,7 +3438,7 @@ mod tests {
 
             let quant_info = res.quantization_info();
             assert_eq!(quant_info.guard_bits, 7);
-            assert_eq!(quant_info.style, QuantStyle::NoQuant);
+            assert_eq!(quant_info.style, QuantizationStyle::NoQuantization);
             assert_eq!(
                 quant_info.values(),
                 vec![0x40, 0x48, 0x48, 0x50, 0x48, 0x48, 0x50, 0x48, 0x48, 0x50,]
@@ -3445,7 +3459,7 @@ mod tests {
 
             let quant_info = res.quantization_info();
             assert_eq!(quant_info.guard_bits, 2);
-            assert_eq!(quant_info.style, QuantStyle::ScalarDerived);
+            assert_eq!(quant_info.style, QuantizationStyle::ScalarDerived);
             assert_eq!(quant_info.values(), vec![0xF801]);
             assert_eq!(quant_info.exponents(), vec![0x1F]);
         }
@@ -3462,7 +3476,7 @@ mod tests {
 
             let quant_info = res.quantization_info();
             assert_eq!(quant_info.guard_bits, 4);
-            assert_eq!(quant_info.style, QuantStyle::ScalarExpounded);
+            assert_eq!(quant_info.style, QuantizationStyle::ScalarExpounded);
             assert_eq!(quant_info.values(), vec![0x4001, 0x4802, 0x4803, 0x5004]);
             assert_eq!(quant_info.exponents(), vec![8, 9, 9, 10]);
         }

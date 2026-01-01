@@ -2,7 +2,7 @@ use std::{fs::File, io::BufReader, path::Path};
 
 use jpc::{
     decode_jpc, CodingBlockStyle, CommentRegistrationValue, MultipleComponentTransformation,
-    ProgressionOrder, QuantStyle, TransformationFilter,
+    ProgressionOrder, QuantizationStyle, TransformationFilter,
 };
 
 #[test]
@@ -102,7 +102,7 @@ fn test_blue() {
     assert_eq!(qcd.length(), 19);
     let quant_info = qcd.quantization_info();
     assert_eq!(quant_info.guard_bits, 2);
-    assert_eq!(quant_info.style, QuantStyle::NoQuant);
+    assert_eq!(quant_info.style, QuantizationStyle::NoQuantization);
     assert_eq!(
         quant_info.exponents(),
         vec![8, 9, 9, 10, 9, 9, 10, 9, 9, 10, 9, 9, 10, 9, 9, 10]
