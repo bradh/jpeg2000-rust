@@ -6,7 +6,7 @@ fn init() {
 
 use jpc::{
     decode_jpc, CodingBlockStyle, CommentRegistrationValue, MultipleComponentTransformation,
-    ProgressionOrder, QuantizationStyle, TransformationFilter,
+    ProgressionOrder, QuantStyle, TransformationFilter,
 };
 
 #[test]
@@ -146,9 +146,11 @@ fn test_ds0_ht_01_b11_codestream() {
     // QCD
     let qcd = header.quantization_default_marker_segment();
     assert_eq!(qcd.length(), 13);
-    assert_eq!(qcd.quantization_style(), QuantizationStyle::No { guard: 2 }); // style = No Quant
+    let quant_info = qcd.quantization_info();
+    assert_eq!(quant_info.guard_bits, 2);
+    assert_eq!(quant_info.style, QuantStyle::NoQuant);
     assert_eq!(
-        qcd.quantization_exponents(),
+        quant_info.exponents(),
         vec![8, 9, 9, 10, 9, 9, 10, 9, 9, 10]
     );
 

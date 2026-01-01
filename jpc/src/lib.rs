@@ -2,6 +2,7 @@
 
 use log::info;
 use std::cmp;
+use std::convert::TryInto;
 use std::error;
 use std::fmt;
 use std::io;
@@ -46,6 +47,9 @@ enum CodestreamError {
     UnsupportedFeature {
         marker: MarkerSymbol,
         offset: u64,
+    },
+    UnexpectedError {
+        error: String,
     },
 }
 
@@ -107,6 +111,15 @@ impl fmt::Display for CodestreamError {
                     "unsupported feature for marker {marker} at byte offset {offset}",
                 )
             }
+            Self::UnexpectedError { error } => write!(f, "Unknown error: {}", error),
+        }
+    }
+}
+
+impl From<io::Error> for CodestreamError {
+    fn from(value: io::Error) -> Self {
+        CodestreamError::UnexpectedError {
+            error: value.to_string(),
         }
     }
 }
@@ -1524,33 +1537,143 @@ impl CommentMarkerSegment {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum QuantizationStyle {
-    No { guard: u8 },
-    ScalarDerived { guard: u8 },
-    ScalarExpounded { guard: u8 },
-    Reserved { value: u8 },
+/// Quantization info contains the style, guard bits, and quantization values
+///
+/// See ITU-T T.800(V4) or ISO/IEC 15444-1:2024 Section A.6.4
+#[derive(Debug)]
+pub struct QuantizationInfo {
+    pub guard_bits: u8, // 0..=7
+    pub style: QuantStyle,
+    values_bytes: Vec<u8>,
 }
 
-impl QuantizationStyle {
-    fn new(byte: u8) -> QuantizationStyle {
-        let value = byte << 3 >> 3;
+#[derive(Debug, PartialEq, Eq)]
+pub enum QuantStyle {
+    NoQuant,
+    ScalarDerived,
+    ScalarExpounded,
+    Reserved(u8),
+}
 
-        // 000x xxxx to 111x xxxx, Number of guard bits: 0 to 7
-        let guard = u8::from_be(byte >> 5);
+impl QuantizationInfo {
+    const SHIFT_GUARD: u8 = 5; // guard bits are encoded into top 3 bits of a u8
+    const SHIFT_EXP: u8 = 3;
+    const SHIFT_BIG: u8 = 8 + Self::SHIFT_EXP; // one byte more
+    const MASK_EXPONENT: u8 = 0b11111; // 5 bits for exponent
 
-        match value {
-            // No quantization
-            0b0000_0000 => QuantizationStyle::No { guard },
+    /// encode guard bits and style into u8
+    pub fn style_as_u8(&self) -> u8 {
+        let g = self.guard_bits << 5;
+        let qs = match self.style {
+            QuantStyle::NoQuant => 0,
+            QuantStyle::ScalarDerived => 1,
+            QuantStyle::ScalarExpounded => 2,
+            QuantStyle::Reserved(v) => v,
+        };
+        g + qs
+    }
 
-            // Scalar derived (values signalled for NLLL subband only).
-            0b0000_0001 => QuantizationStyle::ScalarDerived { guard },
-            // Scalar expounded (values signalled for each subband). There are
-            // as many step sizes signalled as there are subbands.
-            0b0000_0010 => QuantizationStyle::ScalarExpounded { guard },
-
-            _ => QuantizationStyle::Reserved { value: byte },
+    /// Grab the exponents for the quantization values
+    pub fn exponents(&self) -> Vec<u8> {
+        match &self.style {
+            QuantStyle::NoQuant => self
+                .values_bytes
+                .iter()
+                .map(|v| (v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT)
+                .collect(),
+            QuantStyle::ScalarDerived => {
+                let v = self.values_bytes[0];
+                vec![(v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT]
+            }
+            QuantStyle::ScalarExpounded => self
+                .values_bytes
+                .iter()
+                .step_by(2)
+                .map(|v| (v >> Self::SHIFT_EXP) & Self::MASK_EXPONENT)
+                .collect(),
+            QuantStyle::Reserved(v) => {
+                panic!("unable to convert exponents for unknown QuantStyle {}", v)
+            }
         }
+    }
+
+    /// raw values
+    pub fn values(&self) -> Vec<u16> {
+        info!("Weird to grab raw values for quantization style");
+        match &self.style {
+            QuantStyle::NoQuant => self.values_bytes.iter().map(|v| *v as u16).collect(),
+            QuantStyle::ScalarDerived => {
+                let b1 = self.values_bytes[0];
+                let b2 = self.values_bytes[1];
+                vec![u16::from_be_bytes([b1, b2])]
+            }
+            QuantStyle::ScalarExpounded => self
+                .values_bytes
+                .chunks_exact(2)
+                .map(|b| u16::from_be_bytes(b.try_into().unwrap()))
+                .collect(),
+            QuantStyle::Reserved(v) => {
+                panic!("unable to convert values for unknown QuantStyle {}", v)
+            }
+        }
+    }
+
+    /// Decode a QuantizationStyle given expected length
+    ///
+    /// length should be the length of style and associated values
+    fn decode<R: io::Read + io::Seek>(
+        reader: &mut R,
+        length: u16,
+    ) -> Result<QuantizationInfo, CodestreamError> {
+        // know from length how much to read
+        let qb = {
+            let mut buf = [0u8];
+            reader.read_exact(&mut buf)?;
+            buf[0]
+        };
+        let guard_bits = qb >> Self::SHIFT_GUARD;
+        let style_code = qb & 0b11111; // 5 bits for style
+        let style = match style_code {
+            0 => {
+                if !(length - 2).is_multiple_of(3) {
+                    Err(CodestreamError::UnexpectedError {
+                        error: String::from("Invalid length for quantization style"),
+                    })?
+                }
+                QuantStyle::NoQuant
+            }
+            1 => {
+                if length != 3 {
+                    Err(CodestreamError::UnexpectedError {
+                        error: String::from("Invalid length for quantization style"),
+                    })?
+                }
+                QuantStyle::ScalarDerived
+            }
+            2 => {
+                if !(length - 3).is_multiple_of(6) {
+                    Err(CodestreamError::UnexpectedError {
+                        error: String::from("Invalid length for quantization style"),
+                    })?
+                }
+                QuantStyle::ScalarExpounded
+            }
+            _ => {
+                // error out because we usually need quantization style
+                Err(CodestreamError::UnexpectedError {
+                    error: format!("Unknown quantization style: {:x}", qb),
+                })?
+            }
+        };
+
+        // grab remaining length after reading style
+        let mut buf = vec![0u8; (length - 1) as usize];
+        reader.read_exact(&mut buf)?;
+        Ok(QuantizationInfo {
+            guard_bits,
+            style,
+            values_bytes: buf,
+        })
     }
 }
 
@@ -1597,17 +1720,13 @@ impl QuantizationValue {
 // components not defined by a QCC marker segment. The parameter values can be
 // overridden for an individual component by a QCC marker segment in either the
 // main or tile-part header.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct QuantizationDefaultMarkerSegment {
     // Length of marker segment in bytes (not including the marker).
     length: u16,
 
-    // Sqcd: Quantization style for all components
-    quantization_style: [u8; 1],
-
-    // SPqcd^i: Quantization step size value for the ith subband in the defined
-    // order.
-    values: Vec<QuantizationValue>,
+    // Quantization style info for all components
+    quantization_info: QuantizationInfo,
 }
 
 impl QuantizationDefaultMarkerSegment {
@@ -1616,19 +1735,19 @@ impl QuantizationDefaultMarkerSegment {
     }
 
     pub fn quantization_style_u8(&self) -> u8 {
-        u8::from_be_bytes(self.quantization_style)
+        self.quantization_info.style_as_u8()
     }
 
-    pub fn quantization_style(&self) -> QuantizationStyle {
-        QuantizationStyle::new(self.quantization_style[0])
+    pub fn quantization_info(&self) -> &QuantizationInfo {
+        &self.quantization_info
+    }
+
+    pub fn guard_bits(&self) -> u8 {
+        self.quantization_info.guard_bits
     }
 
     pub fn quantization_values(&self) -> Vec<u16> {
-        self.values.iter().map(|e| e.value()).collect()
-    }
-
-    pub fn quantization_exponents(&self) -> Vec<u8> {
-        self.values.iter().map(|e| e.exponent()).collect()
+        self.quantization_info.values()
     }
 }
 
@@ -1638,7 +1757,7 @@ impl QuantizationDefaultMarkerSegment {
 //
 // Function: Describes the quantization used for compressing a particular
 // component
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct QuantizationComponentSegment {
     offset: u64,
 
@@ -1648,11 +1767,7 @@ pub struct QuantizationComponentSegment {
     // Cqcc: The index of the component to which this marker segment relates.
     component_index: [u8; 2],
 
-    // Sqcc: Quantization style for this component.
-    quantization_style: [u8; 1],
-
-    // SPqcci: Quantization value for each subband in the defined order.
-    quantization_values: Vec<QuantizationValue>,
+    quantization_info: QuantizationInfo,
 }
 
 impl QuantizationComponentSegment {
@@ -1664,12 +1779,8 @@ impl QuantizationComponentSegment {
         u16::from_be_bytes(self.component_index)
     }
 
-    pub fn quantization_style_u8(&self) -> u8 {
-        u8::from_be_bytes(self.quantization_style)
-    }
-
-    pub fn quantization_style(&self) -> QuantizationStyle {
-        QuantizationStyle::new(self.quantization_style[0])
+    pub fn quantization_info(&self) -> &QuantizationInfo {
+        &self.quantization_info
     }
 }
 
@@ -2068,7 +2179,6 @@ impl ContiguousCodestream {
             index += 1;
         }
         info!("POC end at byte offset {}", reader.stream_position()?);
-
         Ok(segment)
     }
 
@@ -2183,73 +2293,18 @@ impl ContiguousCodestream {
         Ok(segment)
     }
 
-    fn decode_quantization_values<R: io::Read + io::Seek>(
-        &mut self,
-        reader: &mut R,
-        quantization_style: QuantizationStyle,
-        no_decomposition_levels: u8,
-    ) -> Result<Vec<QuantizationValue>, Box<dyn error::Error>> {
-        // Decomposition levels are divided into subbands. These include the HL, LH, and HH subbands of the same two dimensional subband decomposition. For the last decomposition level the LL subband is also included.
-        let no_subbands = no_decomposition_levels * 3 + 1;
-
-        let mut quantization_values: Vec<QuantizationValue> =
-            Vec::with_capacity(no_subbands as usize);
-
-        for _ in 0..no_subbands {
-            match quantization_style {
-                // Reversible transformation values
-                QuantizationStyle::No { guard: _ } => {
-                    let mut value = [0u8; 1];
-                    reader.read_exact(&mut value)?;
-
-                    let quantization_value = QuantizationValue::Reversible { value };
-                    quantization_values.push(quantization_value);
-                }
-                // Irreversible transformation values
-                QuantizationStyle::ScalarExpounded { guard: _ }
-                | QuantizationStyle::ScalarDerived { guard: _ } => {
-                    let mut value = [0u8; 2];
-                    reader.read_exact(&mut value)?;
-
-                    let quantization_value = QuantizationValue::Irreversible { value };
-                    quantization_values.push(quantization_value);
-                }
-                QuantizationStyle::Reserved { value: _value } => {
-                    todo!()
-                }
-            }
-        }
-
-        Ok(quantization_values)
-    }
-
     fn decode_qcd<R: io::Read + io::Seek>(
         &mut self,
         reader: &mut R,
     ) -> Result<QuantizationDefaultMarkerSegment, Box<dyn error::Error>> {
         info!("QCD start at byte offset {}", reader.stream_position()? - 2);
-        let mut segment = QuantizationDefaultMarkerSegment {
-            length: self.decode_length(reader)?,
-            ..Default::default()
-        };
-
-        reader.read_exact(&mut segment.quantization_style)?;
-
-        let no_decomposition_levels = match segment.quantization_style() {
-            QuantizationStyle::No { guard: _ } => (segment.length() - 4) / 3,
-            QuantizationStyle::ScalarDerived { guard: _ } => 5,
-            QuantizationStyle::ScalarExpounded { guard: _ } => (segment.length() - 5) / 6,
-            _ => panic!(),
-        } as u8;
-
-        segment.values = self.decode_quantization_values(
-            reader,
-            segment.quantization_style(),
-            no_decomposition_levels,
-        )?;
+        let length = self.decode_length(reader)?;
+        let quantization_style = QuantizationInfo::decode(reader, length - 2)?;
         info!("QCD end at byte offset {}", reader.stream_position()?);
-
-        Ok(segment)
+        Ok(QuantizationDefaultMarkerSegment {
+            length,
+            quantization_info: quantization_style,
+        })
     }
 
     fn decode_qcc<R: io::Read + io::Seek>(
@@ -2258,39 +2313,24 @@ impl ContiguousCodestream {
         no_components: u16,
     ) -> Result<QuantizationComponentSegment, Box<dyn error::Error>> {
         info!("QCC start at byte offset {}", reader.stream_position()? - 2);
-        let mut segment = QuantizationComponentSegment {
-            offset: reader.stream_position()?,
-            length: self.decode_length(reader)?,
-            ..Default::default()
-        };
+        let offset = reader.stream_position()?;
+        let length = self.decode_length(reader)?;
 
         // Cqcc
-        segment.component_index = self.decode_component_index(reader, no_components)?;
+        let component_index = self.decode_component_index(reader, no_components)?;
 
-        // Sqcc
-        reader.read_exact(&mut segment.quantization_style)?;
+        let len_comp = if no_components < 257 { 1 } else { 2 };
 
-        let mut no_decomposition_levels = match segment.quantization_style() {
-            QuantizationStyle::No { guard: _ } => (segment.length() - 5) / 3,
-            QuantizationStyle::ScalarDerived { guard: _ } => 6,
-            QuantizationStyle::ScalarExpounded { guard: _ } => (segment.length() - 6) / 6,
-            _ => panic!(),
-        } as u8;
+        let quantization_info = QuantizationInfo::decode(reader, length - (2 + len_comp))?;
 
-        if no_components >= 257 {
-            no_decomposition_levels += 1;
-        }
-
-        // SPqcc
-
-        segment.quantization_values = self.decode_quantization_values(
-            reader,
-            segment.quantization_style(),
-            no_decomposition_levels,
-        )?;
         info!("QCC end at byte offset {}", reader.stream_position()?);
 
-        Ok(segment)
+        Ok(QuantizationComponentSegment {
+            offset,
+            length,
+            component_index,
+            quantization_info,
+        })
     }
 
     fn decode_plm<R: io::Read + io::Seek>(
@@ -2650,10 +2690,10 @@ struct TileHeader {
     coding_style_component_segment: CodingStyleComponentSegment,
 
     // QCD (Optional)
-    quantization_default_marker_segment: QuantizationDefaultMarkerSegment,
+    quantization_default_marker_segment: Option<QuantizationDefaultMarkerSegment>,
 
     // QCC (Optional)
-    quantization_component_segment: QuantizationComponentSegment,
+    quantization_component_segment: Option<QuantizationComponentSegment>,
 
     // RGN (Optional)
     regions: Vec<RegionOfInterestSegment>,
@@ -2909,13 +2949,13 @@ impl ContiguousCodestream {
                     // QCD (Optional)
                     MARKER_SYMBOL_QCD => {
                         tile_header.quantization_default_marker_segment =
-                            self.decode_qcd(reader)?;
+                            Some(self.decode_qcd(reader)?);
                     }
 
                     // QCC (Optional)
                     MARKER_SYMBOL_QCC => {
                         tile_header.quantization_component_segment =
-                            self.decode_qcc(reader, no_components)?;
+                            Some(self.decode_qcc(reader, no_components)?);
                     }
 
                     // RGN (Optional)
@@ -3236,6 +3276,8 @@ pub fn decode_jpc<R: io::Read + io::Seek>(
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Seek};
+
     use super::*;
 
     #[test]
@@ -3364,5 +3406,65 @@ mod tests {
             format!("{e}"),
             "unsupported feature for marker PLT (0xFF58) at byte offset 3425"
         );
+    }
+
+    #[test]
+    fn test_decode_qcd() {
+        {
+            // Test no quant style
+            let bytes = [
+                0xff, 0x5c, 0, 0xD, 0xE0, 0x40, 0x48, 0x48, 0x50, 0x48, 0x48, 0x50, 0x48, 0x48,
+                0x50,
+            ];
+            let mut cursor = Cursor::new(&bytes);
+            cursor.seek_relative(2).unwrap(); // skip marker
+            let mut continuous_codestream = ContiguousCodestream::default();
+            let res = continuous_codestream.decode_qcd(&mut cursor).unwrap();
+            assert_eq!(res.length, 13);
+
+            let quant_info = res.quantization_info();
+            assert_eq!(quant_info.guard_bits, 7);
+            assert_eq!(quant_info.style, QuantStyle::NoQuant);
+            assert_eq!(
+                quant_info.values(),
+                vec![0x40, 0x48, 0x48, 0x50, 0x48, 0x48, 0x50, 0x48, 0x48, 0x50,]
+            );
+            assert_eq!(
+                quant_info.exponents(),
+                vec![8, 9, 9, 10, 9, 9, 10, 9, 9, 10]
+            );
+        }
+        {
+            // Test scalar derived style
+            let bytes = [0xff, 0x5c, 0, 0x5, 0x41, 0xF8, 0x01, 0xff, 0x5d];
+            let mut cursor = Cursor::new(&bytes);
+            cursor.seek_relative(2).unwrap(); // skip marker
+            let mut continuous_codestream = ContiguousCodestream::default();
+            let res = continuous_codestream.decode_qcd(&mut cursor).unwrap();
+            assert_eq!(res.length, 5);
+
+            let quant_info = res.quantization_info();
+            assert_eq!(quant_info.guard_bits, 2);
+            assert_eq!(quant_info.style, QuantStyle::ScalarDerived);
+            assert_eq!(quant_info.values(), vec![0xF801]);
+            assert_eq!(quant_info.exponents(), vec![0x1F]);
+        }
+        {
+            // Test scalar expounded
+            let bytes = [
+                0xff, 0x5c, 0, 0xB, 0x82, 0x40, 0x01, 0x48, 0x02, 0x48, 0x03, 0x50, 0x04,
+            ];
+            let mut cursor = Cursor::new(&bytes);
+            cursor.seek_relative(2).unwrap(); // skip marker
+            let mut continuous_codestream = ContiguousCodestream::default();
+            let res = continuous_codestream.decode_qcd(&mut cursor).unwrap();
+            assert_eq!(res.length, 11);
+
+            let quant_info = res.quantization_info();
+            assert_eq!(quant_info.guard_bits, 4);
+            assert_eq!(quant_info.style, QuantStyle::ScalarExpounded);
+            assert_eq!(quant_info.values(), vec![0x4001, 0x4802, 0x4803, 0x5004]);
+            assert_eq!(quant_info.exponents(), vec![8, 9, 9, 10]);
+        }
     }
 }

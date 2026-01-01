@@ -14,6 +14,13 @@ fn get_compliance_data_dir() -> PathBuf {
         .join(DATA_FOLDER)
 }
 
+pub fn init_logger() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Info)
+        .try_init();
+}
+
 #[test]
 fn test_data_load() {
     let data_path = get_compliance_data_dir().join("input/conformance/p0_03.j2k");
@@ -29,13 +36,14 @@ fn test_data_load() {
 /// Treat as a ratchet and try to improve results.
 #[test]
 fn test_parse_p0_j2k_files() {
+    //init_logger();
     let files = [
         // (Expect parse?, file_name)
         (true, "./input/conformance/p0_01.j2k"),
-        (false, "./input/conformance/p0_02.j2k"),
+        (true, "./input/conformance/p0_02.j2k"),
         (false, "./input/conformance/p0_03.j2k"),
         (true, "./input/conformance/p0_04.j2k"),
-        (false, "./input/conformance/p0_05.j2k"),
+        (true, "./input/conformance/p0_05.j2k"),
         (true, "./input/conformance/p0_06.j2k"),
         (false, "./input/conformance/p0_07.j2k"),
         (true, "./input/conformance/p0_08.j2k"),
@@ -43,7 +51,7 @@ fn test_parse_p0_j2k_files() {
         (false, "./input/conformance/p0_10.j2k"),
         (true, "./input/conformance/p0_11.j2k"),
         (true, "./input/conformance/p0_12.j2k"),
-        (false, "./input/conformance/p0_13.j2k"),
+        (true, "./input/conformance/p0_13.j2k"),
         (true, "./input/conformance/p0_14.j2k"),
         (false, "./input/conformance/p0_15.j2k"),
         (true, "./input/conformance/p0_16.j2k"),
@@ -74,11 +82,12 @@ fn test_parse_p0_j2k_files() {
 /// Treat as a ratchet and try to improve results.
 #[test]
 fn test_parse_p1_j2k_files() {
+    //init_logger();
     let files = [
         // (Expect parse?, file_name)
         (true, "./input/conformance/p1_01.j2k"),
         (true, "./input/conformance/p1_02.j2k"),
-        (false, "./input/conformance/p1_03.j2k"),
+        (true, "./input/conformance/p1_03.j2k"),
         (false, "./input/conformance/p1_04.j2k"),
         (false, "./input/conformance/p1_05.j2k"),
         (false, "./input/conformance/p1_06.j2k"),
