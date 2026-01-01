@@ -2038,10 +2038,10 @@ impl ContiguousCodestream {
         };
 
         // The number of progression changes can be derived from the length of the
-        // marker segment.
-        let no_progression_order_change = match no_components < 256 {
-            true => segment.length - 2 - 7,
-            false => segment.length - 2 - 9,
+        // marker segment. See Part 1 Equation A-6.
+        let no_progression_order_change = match no_components < 257 {
+            true => (segment.length - 2) / 7,
+            false => (segment.length - 2) / 9,
         };
 
         segment.progressions = Vec::with_capacity(no_progression_order_change as usize);
