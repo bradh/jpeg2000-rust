@@ -5,8 +5,16 @@ use jpc::{
     ProgressionOrder, QuantizationStyle, TransformationFilter,
 };
 
+fn init_logger() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Debug)
+        .try_init();
+}
+
 #[test]
 fn test_blue() {
+    init_logger();
     let filename = "blue.j2k";
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -136,4 +144,18 @@ fn test_blue() {
         com.comment_utf8().unwrap(),
         "Created by OpenJPEG version 2.5.0"
     );
+}
+
+#[ignore = "Needs POC fix as well"]
+#[test]
+fn test_p0_13() {
+    init_logger();
+    let filename = "p0_13.j2k";
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join(filename);
+    let file = File::open(path).expect("file should exist");
+    let mut reader = BufReader::new(file);
+    let result = decode_jpc(&mut reader);
+    assert!(result.is_ok());
 }

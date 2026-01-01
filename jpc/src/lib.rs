@@ -2270,16 +2270,22 @@ impl ContiguousCodestream {
         // Sqcc
         reader.read_exact(&mut segment.quantization_style)?;
 
-        let mut no_decomposition_levels = match segment.quantization_style() {
-            QuantizationStyle::No { guard: _ } => (segment.length() - 5) / 3,
-            QuantizationStyle::ScalarDerived { guard: _ } => 6,
-            QuantizationStyle::ScalarExpounded { guard: _ } => (segment.length() - 6) / 6,
-            _ => panic!(),
+        let no_decomposition_levels = if no_components >= 257 {
+            match segment.quantization_style() {
+                QuantizationStyle::No { .. } => (segment.length() - 6) / 3,
+                QuantizationStyle::ScalarDerived { .. } => 1,
+                QuantizationStyle::ScalarExpounded { .. } => (segment.length() - 7) / 6,
+                QuantizationStyle::Reserved { .. } => panic!(),
+            }
+        } else {
+            // no_components < 257
+            match segment.quantization_style() {
+                QuantizationStyle::No { .. } => (segment.length() - 5) / 3,
+                QuantizationStyle::ScalarDerived { .. } => 1,
+                QuantizationStyle::ScalarExpounded { .. } => (segment.length() - 6) / 6,
+                QuantizationStyle::Reserved { .. } => panic!(),
+            }
         } as u8;
-
-        if no_components >= 257 {
-            no_decomposition_levels += 1;
-        }
 
         // SPqcc
 
