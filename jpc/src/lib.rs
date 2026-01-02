@@ -207,41 +207,65 @@ impl fmt::Display for MarkerSymbol {
 
 // Markers and segment markers from ITU T.800 | ISO/IEC 15444-1 Table A.2
 // Delimiting markers and marker segments
-const MARKER_SYMBOL_SOC: MarkerSymbol = MarkerSymbol([0xFF, 0x4F]); // Start of code stream
-const MARKER_SYMBOL_SOT: MarkerSymbol = MarkerSymbol([0xFF, 0x90]); // Start of tile-part
-const MARKER_SYMBOL_SOD: MarkerSymbol = MarkerSymbol([0xFF, 0x93]); // Start of data
-const MARKER_SYMBOL_EOC: MarkerSymbol = MarkerSymbol([0xFF, 0xD9]); // End of codestream
+
+/// Start of code stream
+const MARKER_SYMBOL_SOC: MarkerSymbol = MarkerSymbol([0xFF, 0x4F]);
+/// Start of tile-part
+const MARKER_SYMBOL_SOT: MarkerSymbol = MarkerSymbol([0xFF, 0x90]);
+/// Start of data
+const MARKER_SYMBOL_SOD: MarkerSymbol = MarkerSymbol([0xFF, 0x93]);
+/// End of codestream
+const MARKER_SYMBOL_EOC: MarkerSymbol = MarkerSymbol([0xFF, 0xD9]);
 
 // Fixed information marker segments
-const MARKER_SYMBOL_SIZ: MarkerSymbol = MarkerSymbol([0xFF, 0x51]); // Image and tile size
-const MARKER_SYMBOL_PRF: MarkerSymbol = MarkerSymbol([0xFF, 0x56]); // Profile
-const MARKER_SYMBOL_CAP: MarkerSymbol = MarkerSymbol([0xFF, 0x50]); // Extended capabilities
+/// Image and tile size
+const MARKER_SYMBOL_SIZ: MarkerSymbol = MarkerSymbol([0xFF, 0x51]);
+/// Profile
+const MARKER_SYMBOL_PRF: MarkerSymbol = MarkerSymbol([0xFF, 0x56]);
+/// Extended capabilities
+const MARKER_SYMBOL_CAP: MarkerSymbol = MarkerSymbol([0xFF, 0x50]);
 
 // Functional marker segments
-const MARKER_SYMBOL_COD: MarkerSymbol = MarkerSymbol([0xFF, 0x52]); // Coding style default
-const MARKER_SYMBOL_COC: MarkerSymbol = MarkerSymbol([0xFF, 0x53]); // Coding style component
-const MARKER_SYMBOL_RGN: MarkerSymbol = MarkerSymbol([0xFF, 0x5E]); // Region-of-interest
-const MARKER_SYMBOL_QCD: MarkerSymbol = MarkerSymbol([0xFF, 0x5C]); // Quantization default
-const MARKER_SYMBOL_QCC: MarkerSymbol = MarkerSymbol([0xFF, 0x5D]); // Quantization component
-const MARKER_SYMBOL_POC: MarkerSymbol = MarkerSymbol([0xFF, 0x5F]); // Progression order change
+/// Coding style default
+const MARKER_SYMBOL_COD: MarkerSymbol = MarkerSymbol([0xFF, 0x52]);
+/// Coding style component
+const MARKER_SYMBOL_COC: MarkerSymbol = MarkerSymbol([0xFF, 0x53]);
+/// Region-of-interest
+const MARKER_SYMBOL_RGN: MarkerSymbol = MarkerSymbol([0xFF, 0x5E]);
+/// Quantization default
+const MARKER_SYMBOL_QCD: MarkerSymbol = MarkerSymbol([0xFF, 0x5C]);
+/// Quantization component
+const MARKER_SYMBOL_QCC: MarkerSymbol = MarkerSymbol([0xFF, 0x5D]);
+/// Progression order change
+const MARKER_SYMBOL_POC: MarkerSymbol = MarkerSymbol([0xFF, 0x5F]);
 
 // Pointer marker segments
-const MARKER_SYMBOL_TLM: MarkerSymbol = MarkerSymbol([0xFF, 0x55]); // Tile-part lengths
-const MARKER_SYMBOL_PLM: MarkerSymbol = MarkerSymbol([0xFF, 0x57]); // Packet length, main header
-const MARKER_SYMBOL_PLT: MarkerSymbol = MarkerSymbol([0xFF, 0x58]); // Packet length, tile-part header
-const MARKER_SYMBOL_PPM: MarkerSymbol = MarkerSymbol([0xFF, 0x60]); // Packed packet headers, main header
-const MARKER_SYMBOL_PPT: MarkerSymbol = MarkerSymbol([0xFF, 0x61]); // Packed packet headers, tile-part header
+/// Tile-part lengths
+const MARKER_SYMBOL_TLM: MarkerSymbol = MarkerSymbol([0xFF, 0x55]);
+/// Packet length, main header
+const MARKER_SYMBOL_PLM: MarkerSymbol = MarkerSymbol([0xFF, 0x57]);
+/// Packet length, tile-part header
+const MARKER_SYMBOL_PLT: MarkerSymbol = MarkerSymbol([0xFF, 0x58]);
+/// Packed packet headers, main header
+const MARKER_SYMBOL_PPM: MarkerSymbol = MarkerSymbol([0xFF, 0x60]);
+/// Packed packet headers, tile-part header
+const MARKER_SYMBOL_PPT: MarkerSymbol = MarkerSymbol([0xFF, 0x61]);
 
 // In bit stream markers and marker segments
-const MARKER_SYMBOL_SOP: MarkerSymbol = MarkerSymbol([0xFF, 0x91]); // Start of packet
-const MARKER_SYMBOL_EPH: MarkerSymbol = MarkerSymbol([0xFF, 0x92]); // End of packet header
+/// Start of packet
+const MARKER_SYMBOL_SOP: MarkerSymbol = MarkerSymbol([0xFF, 0x91]);
+/// End of packet header
+const MARKER_SYMBOL_EPH: MarkerSymbol = MarkerSymbol([0xFF, 0x92]);
 
 // Informational marker segments
-const MARKER_SYMBOL_CRG: MarkerSymbol = MarkerSymbol([0xFF, 0x63]); // Component registration
-const MARKER_SYMBOL_COM: MarkerSymbol = MarkerSymbol([0xFF, 0x64]); // Comment
+/// Component registration
+const MARKER_SYMBOL_CRG: MarkerSymbol = MarkerSymbol([0xFF, 0x63]);
+/// Comment
+const MARKER_SYMBOL_COM: MarkerSymbol = MarkerSymbol([0xFF, 0x64]);
 
 // Marker segment from ITU-T T.814 | ISO/IEC 15444-15 Section A.6:
-const MARKER_SYMBOL_CPF: MarkerSymbol = MarkerSymbol([0xFF, 0x59]); // Corresponding profile
+/// Corresponding profile
+const MARKER_SYMBOL_CPF: MarkerSymbol = MarkerSymbol([0xFF, 0x59]);
 
 #[derive(Debug, PartialEq)]
 pub enum ProgressionOrder {
