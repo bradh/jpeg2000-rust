@@ -15,14 +15,33 @@ mod tag_tree;
 
 #[derive(Debug)]
 enum CodestreamError {
+    /// Marker generic error
     MarkerError {
         marker: MarkerSymbol,
         error: String,
     },
+    /// Marker is unknown, potentially due to lack of support, malformed file, or parsing bug
+    MarkerUnknown {
+        marker: MarkerSymbol,
+        offset: u64,
+    },
+    /// Marker is expected but missing
     MarkerMissing {
         marker: MarkerSymbol,
     },
+    /// Marker is known but another marker is expected
     MarkerUnexpected {
+        actual_marker: MarkerSymbol,
+        expected_marker: MarkerSymbol,
+        offset: u64,
+    },
+    /// Marker is known but disallowed potentially due to previous marker values
+    MarkerDisallowed {
+        marker: MarkerSymbol,
+        offset: u64,
+    },
+    /// Marker is known and expected but is malformed
+    MarkerMalformed {
         marker: MarkerSymbol,
         offset: u64,
     },
@@ -40,10 +59,7 @@ enum CodestreamError {
         image_horizontal_offset: u32,
         image_vertical_offset: u32,
     },
-    MarkerMalformed {
-        marker: MarkerSymbol,
-        offset: u64,
-    },
+    // Marker is known but feature is unsupported
     UnsupportedFeature {
         marker: MarkerSymbol,
         offset: u64,
@@ -63,8 +79,18 @@ impl fmt::Display for CodestreamError {
             Self::MarkerMissing { marker } => {
                 write!(f, "missing marker {marker}")
             }
-            Self::MarkerUnexpected { marker, offset } => {
-                write!(f, "unexpected marker {marker} at byte offset {offset}",)
+            Self::MarkerDisallowed { marker, offset } => {
+                write!(f, "disallowed marker {marker} at byte offset {offset}")
+            }
+            Self::MarkerUnknown { marker, offset } => {
+                write!(f, "unknown marker {marker} at byte offset {offset}")
+            }
+            Self::MarkerUnexpected {
+                actual_marker,
+                expected_marker,
+                offset,
+            } => {
+                write!(f, "unexpected marker {actual_marker} expected {expected_marker} at byte offset {offset}",)
             }
             Self::TileGridOffsetOverflow {
                 image_horizontal_offset,
@@ -2746,7 +2772,8 @@ impl ContiguousCodestream {
         // SOC (Required as the first marker)
         if marker_type != MARKER_SYMBOL_SOC {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: marker_type,
+                actual_marker: marker_type,
+                expected_marker: MARKER_SYMBOL_SOC,
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -2757,7 +2784,8 @@ impl ContiguousCodestream {
         marker_type = MarkerSymbol::decode(reader)?;
         if marker_type != MARKER_SYMBOL_SIZ {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: marker_type,
+                actual_marker: marker_type,
+                expected_marker: MARKER_SYMBOL_SIZ,
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -2877,8 +2905,8 @@ impl ContiguousCodestream {
                     }
 
                     _ => {
-                        log::error!("unexpected marker type: {marker_type:?}");
-                        return Err(CodestreamError::MarkerUnexpected {
+                        log::error!("unknown marker type: {marker_type:?}");
+                        return Err(CodestreamError::MarkerUnknown {
                             marker: marker_type,
                             offset: reader.stream_position()? - 2,
                         }
@@ -2961,7 +2989,8 @@ impl ContiguousCodestream {
         // SOT (Required as the first marker segment of every tile-part header)
         if marker_type != MARKER_SYMBOL_SOT {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: MARKER_SYMBOL_SOT,
+                actual_marker: marker_type,
+                expected_marker: MARKER_SYMBOL_SOT,
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -3016,7 +3045,7 @@ impl ContiguousCodestream {
                         // In this case, the PPT marker segment and packets distributed in the bit stream of the
                         // tile-parts are disallowed.
                         if !self.header.packed_packet_headers.is_empty() {
-                            return Err(CodestreamError::MarkerUnexpected {
+                            return Err(CodestreamError::MarkerDisallowed {
                                 marker: MARKER_SYMBOL_PPT,
                                 offset: reader.stream_position()? - 2,
                             }
@@ -3043,7 +3072,8 @@ impl ContiguousCodestream {
                     }
                     _ => {
                         log::error!("unexpected marker type: {marker_type:?}");
-                        return Err(CodestreamError::MarkerUnexpected {
+                        // Unknown marker
+                        return Err(CodestreamError::MarkerUnknown {
                             marker: marker_type,
                             offset: reader.stream_position()? - 2,
                         }
@@ -3077,7 +3107,8 @@ impl ContiguousCodestream {
         let marker_type: MarkerSymbol = MarkerSymbol::decode(reader)?;
         if marker_type != MARKER_SYMBOL_SOD {
             return Err(CodestreamError::MarkerUnexpected {
-                marker: marker_type,
+                actual_marker: marker_type,
+                expected_marker: MARKER_SYMBOL_SOD,
                 offset: reader.stream_position()?,
             }
             .into());
@@ -3095,7 +3126,7 @@ impl ContiguousCodestream {
                     MARKER_SYMBOL_SOP => {
                         info!("SOP start at byte offset {}", reader.stream_position()? - 2);
                         if coding_styles.contains(&CodingStyleDefault::NoSOP) {
-                            return Err(CodestreamError::MarkerUnexpected {
+                            return Err(CodestreamError::MarkerDisallowed {
                                 marker: MARKER_SYMBOL_SOP,
                                 offset: reader.stream_position()? - 2,
                             }
@@ -3119,7 +3150,7 @@ impl ContiguousCodestream {
                         if !self.header.packed_packet_headers.is_empty()
                             || tile_header.packed_packet_headers.is_some()
                         {
-                            return Err(CodestreamError::MarkerUnexpected {
+                            return Err(CodestreamError::MarkerDisallowed {
                                 marker: MARKER_SYMBOL_EPH,
                                 offset: reader.stream_position()? - 2,
                             }
@@ -3127,7 +3158,7 @@ impl ContiguousCodestream {
                         }
 
                         if coding_styles.contains(&CodingStyleDefault::NoEPH) {
-                            return Err(CodestreamError::MarkerUnexpected {
+                            return Err(CodestreamError::MarkerDisallowed {
                                 marker: MARKER_SYMBOL_EPH,
                                 offset: reader.stream_position()? - 2,
                             }
@@ -3395,14 +3426,27 @@ mod tests {
     }
 
     #[test]
+    fn test_codestream_error_marker_disallowed() {
+        let e = CodestreamError::MarkerDisallowed {
+            marker: MARKER_SYMBOL_PPT,
+            offset: 6136,
+        };
+        assert_eq!(
+            format!("{e}"),
+            "disallowed marker PPT (0xFF61) at byte offset 6136"
+        );
+    }
+
+    #[test]
     fn test_codestream_error_unexpected_marker() {
         let e = CodestreamError::MarkerUnexpected {
-            marker: MARKER_SYMBOL_SOP,
+            actual_marker: MARKER_SYMBOL_SOP,
+            expected_marker: MARKER_SYMBOL_SOT,
             offset: 75453,
         };
         assert_eq!(
             format!("{e}"),
-            "unexpected marker SOP (0xFF91) at byte offset 75453"
+            "unexpected marker SOP (0xFF91) expected SOT (0xFF90) at byte offset 75453"
         );
     }
 
@@ -3442,6 +3486,18 @@ mod tests {
         assert_eq!(
             format!("{e}"),
             "unsupported feature for marker PLT (0xFF58) at byte offset 3425"
+        );
+    }
+
+    #[test]
+    fn test_codestream_error_marker_unknown() {
+        let e = CodestreamError::MarkerUnknown {
+            marker: MARKER_SYMBOL_PLT,
+            offset: 3425,
+        };
+        assert_eq!(
+            format!("{e}"),
+            "unknown marker PLT (0xFF58) at byte offset 3425"
         );
     }
 
