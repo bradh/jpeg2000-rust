@@ -2797,7 +2797,9 @@ impl TilePartHeader {
         self.first_headers
             .as_mut()
             .ok_or(CodestreamError::InputFormatError {
-                error: String::from("ASD"),
+                error: String::from(
+                    "Some tile-part headers are only applicable to the first tile-part for a tile.",
+                ),
             })
     }
 }
@@ -3090,9 +3092,9 @@ impl ContiguousCodestream {
 
                 // COC (Optional)
                 MARKER_SYMBOL_COC => {
+                    // TODO check that there is only a single COC per component
                     let coc = self.decode_coc(reader, no_components)?;
                     header.first_headers()?.coding_style_component_segment = vec![coc];
-                    todo!("Handle COC double check");
                 }
 
                 // QCD (Optional)
@@ -3113,12 +3115,12 @@ impl ContiguousCodestream {
 
                 // QCC (Optional)
                 MARKER_SYMBOL_QCC => {
+                    // TODO check that there is only a single QCC per component
                     let qcc = self.decode_qcc(reader, no_components)?;
                     header
                         .first_headers()?
                         .quantization_component_segment
                         .push(qcc);
-                    todo!("Handle QCC double check");
                 }
 
                 // RGN (Optional)
