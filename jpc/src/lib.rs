@@ -1075,12 +1075,12 @@ pub struct TilePacketLength {
     // header length.
     index: [u8; 1],
 
-    // Iplm^i: Length of the ith packet.
+    // Iplt^i: Length of the ith packet.
     //
     // If packet headers are stored with the packet, this length includes the
     // packet header. If packet headers are stored in the PPM or PPT, this
     // length does not include the packet header lengths.
-    packet_length: Vec<u8>,
+    packet_length: Vec<u64>,
 }
 
 // A.7.4
@@ -2475,14 +2475,46 @@ impl ContiguousCodestream {
             length: self.decode_length(reader)?,
             ..Default::default()
         };
-
+        let end_offset = segment.offset + segment.length as u64;
         reader.read_exact(&mut segment.index)?;
 
-        self.decode_packet_length(reader, &mut segment.packet_length)?;
+        while reader.stream_position()? < end_offset {
+            let iplt = Self::decode_tilepart_packet_length(reader, MARKER_SYMBOL_PLT)?;
+            segment.packet_length.push(iplt);
+        }
 
         info!("PLT end at byte offset {}", reader.stream_position()?);
 
         Ok(segment)
+    }
+
+    fn decode_tilepart_packet_length<R: io::Read + io::Seek>(
+        reader: &mut R,
+        marker: MarkerSymbol,
+    ) -> Result<u64, Box<dyn error::Error>> {
+        let mut next_byte = [0u8; 1];
+        let mut result = 0u64;
+        loop {
+            reader.read_exact(&mut next_byte)?;
+            result = (result << 7) | ((next_byte[0] & 0b0111_1111) as u64);
+            match next_byte[0] & 0b1000_0000 {
+                // 0xxx xxxx - Last 7 bits of packet length, terminate number
+                0b0000_0000 => {
+                    return Ok(result);
+                }
+                // 1xxx xxxx - Continue reading
+                _ => {
+                    if result > u32::MAX as u64 {
+                        // This seems overly long, and probably means a broken codestream
+                        return Err(CodestreamError::MarkerMalformed {
+                            marker,
+                            offset: reader.stream_position()?,
+                        }
+                        .into());
+                    }
+                }
+            }
+        }
     }
 
     fn decode_crg<R: io::Read + io::Seek>(
@@ -2775,7 +2807,7 @@ struct TilePartHeader {
 
     // PLT (Optional)
     // TODO double check there is only one per tile-part
-    packet_lengths: Option<PacketLengthSegment>,
+    packet_lengths: Option<TilePacketLength>,
 
     // COM (Optional, repeatable)
     comment_marker_segments: Vec<CommentMarkerSegment>,
@@ -3156,7 +3188,7 @@ impl ContiguousCodestream {
 
                 // PLT (Optional)
                 MARKER_SYMBOL_PLT => {
-                    let packet_length_segment = self.decode_plm(reader)?;
+                    let packet_length_segment = self.decode_plt(reader)?;
                     header.packet_lengths = Some(packet_length_segment);
                 }
 
