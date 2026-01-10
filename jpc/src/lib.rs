@@ -14,35 +14,35 @@ mod shared;
 mod tag_tree;
 
 #[derive(Debug)]
-enum CodestreamError {
+pub enum CodestreamError {
     /// Marker generic error
     MarkerError {
-        marker: MarkerSymbol,
+        marker: String,
         error: String,
     },
     /// Marker is unknown, potentially due to lack of support, malformed file, or parsing bug
     MarkerUnknown {
-        marker: MarkerSymbol,
+        marker: String,
         offset: u64,
     },
     /// Marker is expected but missing
     MarkerMissing {
-        marker: MarkerSymbol,
+        marker: String,
     },
     /// Marker is known but another marker is expected
     MarkerUnexpected {
-        actual_marker: MarkerSymbol,
-        expected_marker: MarkerSymbol,
+        actual_marker: String,
+        expected_marker: String,
         offset: u64,
     },
     /// Marker is known but disallowed potentially due to previous marker values
     MarkerDisallowed {
-        marker: MarkerSymbol,
+        marker: String,
         offset: u64,
     },
     /// Marker is known and expected but is malformed
     MarkerMalformed {
-        marker: MarkerSymbol,
+        marker: String,
         offset: u64,
     },
     TileSizeOverflow {
@@ -59,9 +59,9 @@ enum CodestreamError {
         image_horizontal_offset: u32,
         image_vertical_offset: u32,
     },
-    // Marker is known but feature is unsupported
+    /// Marker is known but feature is unsupported
     UnsupportedFeature {
-        marker: MarkerSymbol,
+        marker: String,
         offset: u64,
     },
     InputFormatError {
@@ -157,6 +157,12 @@ impl MarkerSymbol {
         let mut marker_type = MarkerSymbol::default();
         reader.read_exact(&mut marker_type.0)?;
         Ok(marker_type)
+    }
+}
+
+impl From<MarkerSymbol> for String {
+    fn from(value: MarkerSymbol) -> Self {
+        format!("{}", value)
     }
 }
 
@@ -1320,25 +1326,45 @@ impl ImageAndTileSizeMarkerSegment {
         u16::from_be_bytes(self.no_components)
     }
 
-    pub fn precision(&self, i: usize) -> Result<i16, Box<dyn error::Error>> {
-        let ssiz = self.precision.get(i).unwrap();
-        let precision = (u8::from_be_bytes(*ssiz) & 0x7f) as i16;
+    pub fn precision(&self, i: usize) -> Result<u8, CodestreamError> {
+        let ssiz = self
+            .precision
+            .get(i)
+            .ok_or(CodestreamError::InputFormatError {
+                error: String::from("unable to get precision for component"),
+            })?;
+        let precision = u8::from_be_bytes(*ssiz) & 0x7f;
         // ISO/IEC 15444-1:2019 Table A.11, component bit depth is value + 1.
         Ok(precision + 1)
     }
 
-    pub fn values_are_signed(&self, i: usize) -> Result<bool, Box<dyn error::Error>> {
-        let ssiz = self.precision.get(i).unwrap();
+    pub fn values_are_signed(&self, i: usize) -> Result<bool, CodestreamError> {
+        let ssiz = self
+            .precision
+            .get(i)
+            .ok_or(CodestreamError::InputFormatError {
+                error: String::from("unable to get signedness for component"),
+            })?;
         let is_signed = (u8::from_be_bytes(*ssiz) & 0x80) == 0x80;
         Ok(is_signed)
     }
 
-    pub fn horizontal_separation(&self, i: usize) -> Result<u8, Box<dyn error::Error>> {
-        let horizontal_separation = self.horizontal_separation.get(i).unwrap();
+    pub fn horizontal_separation(&self, i: usize) -> Result<u8, CodestreamError> {
+        let horizontal_separation =
+            self.horizontal_separation
+                .get(i)
+                .ok_or(CodestreamError::InputFormatError {
+                    error: String::from("unable to get horizontal_separation for component"),
+                })?;
         Ok(u8::from_be_bytes(*horizontal_separation))
     }
-    pub fn vertical_separation(&self, i: usize) -> Result<u8, Box<dyn error::Error>> {
-        let vertical_separation = self.vertical_separation.get(i).unwrap();
+    pub fn vertical_separation(&self, i: usize) -> Result<u8, CodestreamError> {
+        let vertical_separation =
+            self.vertical_separation
+                .get(i)
+                .ok_or(CodestreamError::InputFormatError {
+                    error: String::from("unable to get vertical_separation for component"),
+                })?;
         Ok(u8::from_be_bytes(*vertical_separation))
     }
 
@@ -1999,7 +2025,7 @@ impl ContiguousCodestream {
                 segment.length
             );
             return Err(CodestreamError::MarkerMalformed {
-                marker: MARKER_SYMBOL_CAP,
+                marker: MARKER_SYMBOL_CAP.into(),
                 offset: self.offset,
             }
             .into());
@@ -2039,7 +2065,7 @@ impl ContiguousCodestream {
             // Supporting more is possible, but we need a sanity check to prevent CPFnum overflow
             log::error!("Only a single Pcpf value is supported at this time");
             return Err(CodestreamError::UnsupportedFeature {
-                marker: MARKER_SYMBOL_CPF,
+                marker: MARKER_SYMBOL_CPF.into(),
                 offset: self.offset,
             }
             .into());
@@ -2848,8 +2874,8 @@ impl ContiguousCodestream {
         // SOC (Required as the first marker)
         if marker_type != MARKER_SYMBOL_SOC {
             return Err(CodestreamError::MarkerUnexpected {
-                actual_marker: marker_type,
-                expected_marker: MARKER_SYMBOL_SOC,
+                actual_marker: marker_type.into(),
+                expected_marker: MARKER_SYMBOL_SOC.into(),
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -2860,8 +2886,8 @@ impl ContiguousCodestream {
         marker_type = MarkerSymbol::decode(reader)?;
         if marker_type != MARKER_SYMBOL_SIZ {
             return Err(CodestreamError::MarkerUnexpected {
-                actual_marker: marker_type,
-                expected_marker: MARKER_SYMBOL_SIZ,
+                actual_marker: marker_type.into(),
+                expected_marker: MARKER_SYMBOL_SIZ.into(),
                 offset: reader.stream_position()? - 2,
             }
             .into());
@@ -2983,7 +3009,7 @@ impl ContiguousCodestream {
                     _ => {
                         log::error!("unknown marker type: {marker_type:?}");
                         return Err(CodestreamError::MarkerUnknown {
-                            marker: marker_type,
+                            marker: marker_type.into(),
                             offset: reader.stream_position()? - 2,
                         }
                         .into());
@@ -2996,13 +3022,13 @@ impl ContiguousCodestream {
         // Required
         if header.quantization_default_marker_segment.is_none() {
             return Err(CodestreamError::MarkerMissing {
-                marker: MARKER_SYMBOL_QCD,
+                marker: MARKER_SYMBOL_QCD.into(),
             }
             .into());
         }
         if header.coding_style_marker_segment.is_none() {
             return Err(CodestreamError::MarkerMissing {
-                marker: MARKER_SYMBOL_COD,
+                marker: MARKER_SYMBOL_COD.into(),
             }
             .into());
         }
@@ -3011,7 +3037,7 @@ impl ContiguousCodestream {
         // No more than one per any given component may be present in either the main or tile-part headers
         if header.coding_style_component_segment.len() > (no_components as usize) {
             return Err(CodestreamError::MarkerError {
-                marker: MARKER_SYMBOL_COC,
+                marker: MARKER_SYMBOL_COC.into(),
                 error: format!(
                     "number of coding style component (COC) {:?} exceeds number of components {:?}",
                     header.regions.len(),
@@ -3025,7 +3051,7 @@ impl ContiguousCodestream {
         // There may be at most one RGN marker segment for each component in either the main or tile-part headers
         if header.regions.len() > (no_components as usize) {
             return Err(CodestreamError::MarkerError {
-                marker: MARKER_SYMBOL_RGN,
+                marker: MARKER_SYMBOL_RGN.into(),
                 error: format!(
                     "number of region of interest (RGN) {:?} exceeds number of components {:?}",
                     header.regions.len(),
@@ -3039,7 +3065,7 @@ impl ContiguousCodestream {
         // No more than one per any given component may be present in either the main or tile-part headers
         if header.quantization_component_segments.len() > (no_components as usize) {
             return Err(CodestreamError::MarkerError {
-                marker: MARKER_SYMBOL_QCC,
+                marker: MARKER_SYMBOL_QCC.into(),
                 error: format!(
                     "number of quantization component (QCC) {:?} exceeds number of components {:?}",
                     header.regions.len(),
@@ -3087,7 +3113,7 @@ impl ContiguousCodestream {
                         .replace(cod);
                     if prev.is_some() {
                         return Err(CodestreamError::MarkerDisallowed {
-                            marker: MARKER_SYMBOL_COD,
+                            marker: MARKER_SYMBOL_COD.into(),
                             offset: pos,
                         }
                         .into());
@@ -3110,7 +3136,7 @@ impl ContiguousCodestream {
                         .replace(qcd);
                     if prev.is_some() {
                         return Err(CodestreamError::MarkerDisallowed {
-                            marker: MARKER_SYMBOL_QCD,
+                            marker: MARKER_SYMBOL_QCD.into(),
                             offset: pos,
                         }
                         .into());
@@ -3149,7 +3175,7 @@ impl ContiguousCodestream {
                     // tile-parts are disallowed.
                     if !self.header.packed_packet_headers.is_empty() {
                         return Err(CodestreamError::MarkerDisallowed {
-                            marker: MARKER_SYMBOL_PPT,
+                            marker: MARKER_SYMBOL_PPT.into(),
                             offset: reader.stream_position()? - 2,
                         }
                         .into());
@@ -3179,7 +3205,7 @@ impl ContiguousCodestream {
                 marker_type => {
                     log::error!("unexpected marker type: {marker_type:?}");
                     return Err(CodestreamError::MarkerUnknown {
-                        marker: marker_type,
+                        marker: marker_type.into(),
                         offset: reader.stream_position()? - 2,
                     }
                     .into());
@@ -3222,8 +3248,8 @@ impl ContiguousCodestream {
                 marker_type => {
                     error!("Marker {marker_type}");
                     return Err(CodestreamError::MarkerUnexpected {
-                        actual_marker: marker_type,
-                        expected_marker: MARKER_SYMBOL_SOT,
+                        actual_marker: marker_type.into(),
+                        expected_marker: MARKER_SYMBOL_SOT.into(),
                         offset: reader.stream_position()?,
                     }
                     .into());
@@ -3386,7 +3412,7 @@ mod tests {
     #[test]
     fn test_codestream_error_marker_error() {
         let e = CodestreamError::MarkerError {
-            marker: MARKER_SYMBOL_COC,
+            marker: MARKER_SYMBOL_COC.into(),
             error: "test error".into(),
         };
         assert_eq!(format!("{e}"), "marker COC (0xFF53) error \"test error\"");
@@ -3395,7 +3421,7 @@ mod tests {
     #[test]
     fn test_codestream_error_marker_malformed() {
         let e = CodestreamError::MarkerMalformed {
-            marker: MARKER_SYMBOL_POC,
+            marker: MARKER_SYMBOL_POC.into(),
             offset: 3,
         };
         assert_eq!(
@@ -3407,7 +3433,7 @@ mod tests {
     #[test]
     fn test_codestream_error_missing_marker() {
         let e = CodestreamError::MarkerMissing {
-            marker: MARKER_SYMBOL_SIZ,
+            marker: MARKER_SYMBOL_SIZ.into(),
         };
         assert_eq!(format!("{e}"), "missing marker SIZ (0xFF51)");
     }
@@ -3415,7 +3441,7 @@ mod tests {
     #[test]
     fn test_codestream_error_marker_disallowed() {
         let e = CodestreamError::MarkerDisallowed {
-            marker: MARKER_SYMBOL_PPT,
+            marker: MARKER_SYMBOL_PPT.into(),
             offset: 6136,
         };
         assert_eq!(
@@ -3427,8 +3453,8 @@ mod tests {
     #[test]
     fn test_codestream_error_unexpected_marker() {
         let e = CodestreamError::MarkerUnexpected {
-            actual_marker: MARKER_SYMBOL_SOP,
-            expected_marker: MARKER_SYMBOL_SOT,
+            actual_marker: MARKER_SYMBOL_SOP.into(),
+            expected_marker: MARKER_SYMBOL_SOT.into(),
             offset: 75453,
         };
         assert_eq!(
@@ -3467,7 +3493,7 @@ mod tests {
     #[test]
     fn test_codestream_error_unsupported_feature() {
         let e = CodestreamError::UnsupportedFeature {
-            marker: MARKER_SYMBOL_PLT,
+            marker: MARKER_SYMBOL_PLT.into(),
             offset: 3425,
         };
         assert_eq!(
@@ -3479,7 +3505,7 @@ mod tests {
     #[test]
     fn test_codestream_error_marker_unknown() {
         let e = CodestreamError::MarkerUnknown {
-            marker: MARKER_SYMBOL_PLT,
+            marker: MARKER_SYMBOL_PLT.into(),
             offset: 3425,
         };
         assert_eq!(
