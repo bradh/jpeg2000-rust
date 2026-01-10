@@ -738,8 +738,6 @@ impl JBox for HeaderSuperBox {
     }
 }
 
-const COMPRESSION_TYPE_WAVELET: u8 = 7;
-
 /// Image Header box.
 ///
 /// This box contains fixed length generic information about the image, such as

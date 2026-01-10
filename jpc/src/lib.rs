@@ -150,8 +150,6 @@ impl From<io::Error> for CodestreamError {
     }
 }
 
-const COMPRESSION_TYPE_WAVELET: u8 = 7;
-
 #[derive(Default, PartialEq, Eq)]
 struct MarkerSymbol([u8; 2]);
 impl MarkerSymbol {
@@ -267,24 +265,34 @@ const MARKER_SYMBOL_COM: MarkerSymbol = MarkerSymbol([0xFF, 0x64]);
 /// Corresponding profile
 const MARKER_SYMBOL_CPF: MarkerSymbol = MarkerSymbol([0xFF, 0x59]);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ProgressionOrder {
-    // 0000 0000 Layer-resolution level-component-position progression
+    /// Layer-resolution level-component-position progression
+    ///
+    /// 0b0000_0000
     LRLCPP,
 
-    // 0000 0001 Resolution level-layer-component-position progression
+    /// Resolution level-layer-component-position progression
+    ///
+    /// 0b0000_0001
     RLLCPP,
 
-    // 0000 0010 Resolution level-position-component-layer progression
+    /// 0000 0010 Resolution level-position-component-layer progression
+    ///
+    /// 0b0000_0010
     RLPCLP,
 
-    // 0000 0011 Position-component-resolution level-layer progression
+    /// Position-component-resolution level-layer progression
+    ///
+    /// 0b0000_0011
     PCRLLP,
 
-    // 0000 0100 Component-position-resolution level-layer progression
+    /// Component-position-resolution level-layer progression
+    ///
+    /// 0b0000_0100
     CPRLLP,
 
-    // All other values reserved
+    /// All other values reserved
     Reserved { value: u8 },
 }
 
@@ -2803,19 +2811,19 @@ impl TilePartHeader {
 /// Tile-part headers that are only allowed in the first tile-part for a given tile.
 #[derive(Debug, Default)]
 struct FirstTilePartHeaders {
-    // COD (Optional per tile)
+    /// COD (Optional per tile)
     coding_style_marker_segment: Option<CodingStyleMarkerSegment>,
 
-    // COC (Optional per component)
+    /// COC (Optional per component)
     coding_style_component_segment: Vec<CodingStyleComponentSegment>,
 
-    // QCD (Optional per tile)
+    /// QCD (Optional per tile)
     quantization_default_marker_segment: Option<QuantizationDefaultMarkerSegment>,
 
-    // QCC (Optional per component)
+    /// QCC (Optional per component)
     quantization_component_segment: Vec<QuantizationComponentSegment>,
 
-    // RGN (Optional per component)
+    /// RGN (Optional per component)
     regions: Vec<RegionOfInterestSegment>,
 }
 
